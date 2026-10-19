@@ -74,6 +74,9 @@ test('1001 节点导入、编辑、保存和缩放帧间隔实测', async ({ pag
       return { paint, save }
     }, `基线文字 ${i}`)
     expect(timings.paint).toBeDefined()
+    expect(timings.save).toBeDefined()
+    expect(Number.isFinite(timings.paint)).toBe(true)
+    expect(Number.isFinite(timings.save)).toBe(true)
     editMs.push(timings.paint!)
     saveMs.push(timings.save!)
   }
@@ -138,5 +141,10 @@ test('1001 节点导入、编辑、保存和缩放帧间隔实测', async ({ pag
       `性能目标结果：${result.editTargetPassed ? '通过' : '未达到'}（仅记录，不阻断 CI）`,
     )
   else expect(editMs.every((ms) => ms <= 100)).toBe(true)
+  expect(editMs).toHaveLength(5)
+  expect(saveMs).toHaveLength(5)
+  expect(editMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
+  expect(saveMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
   expect(frameTimes).toHaveLength(60)
+  expect(frameTimes.every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true)
 })
