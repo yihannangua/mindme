@@ -9,13 +9,13 @@ import {
   readFile,
   readdir,
   realpath,
-  stat,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pack, verifyPackage } from './archive.mjs'
 import { sha256 } from './provenance.mjs'
+import { cleanupSandbox } from './sandbox.mjs'
 
 const runId = String(process.env.GITHUB_RUN_ID || '1')
 const ciJobs = ['类型、格式、测试与构建', '浏览器与 Node 后端回归', '容器构建与备份恢复']
@@ -136,6 +136,7 @@ export async function runReleaseRehearsal() {
     "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(process.env.DATABASE_PATH,{readOnly:true});console.log(d.prepare(\"SELECT value FROM metadata WHERE key='releaseRehearsal'\").get().value);d.close()"
 
   let composeCreated = false
+  let originalError
   try {
     await mkdir(join(oldRelease, 'deploy'), { recursive: true, mode: 0o700 })
     await mkdir(dataDir, { recursive: true, mode: 0o700 })
@@ -189,6 +190,7 @@ export async function runReleaseRehearsal() {
       ],
       { cwd: oldRelease, stdio: 'inherit' },
     )
+    composeCreated = true
     command(
       'sudo',
       [
@@ -209,7 +211,6 @@ export async function runReleaseRehearsal() {
       ],
       { cwd: oldRelease, stdio: 'inherit' },
     )
-    composeCreated = true
     const oldContainer = command('sudo', [
       '-n',
       'docker',
@@ -267,12 +268,14 @@ export async function runReleaseRehearsal() {
     })
 
     const deployment = JSON.parse(
-      await readFile(join(newRelease, 'deployment-record.json'), 'utf8'),
+      command('sudo', ['-n', 'cat', join(newRelease, 'deployment-record.json')]),
     )
     assert.equal(deployment.sourceSha, sha)
     assert.equal(deployment.packageSha256, packageSha256)
     assert.equal(deployment.backup.mode, '600')
     assert.equal(deployment.backup.quickCheck, 'ok')
+    assert.equal(deployment.backup.restored, true)
+    assert.equal(deployment.backup.compatible, true)
     assert.equal(
       Number(command('sudo', ['-n', 'stat', '-c', '%s', deployment.backup.path]).trim()),
       deployment.backup.size,
@@ -287,6 +290,7 @@ export async function runReleaseRehearsal() {
       '{{.Id}}',
       candidateImage,
     ]).trim()
+    assert.equal(candidateImageId, deployment.imageId)
     const imageEnv = command('sudo', [
       '-n',
       'docker',
@@ -414,6 +418,9 @@ export async function runReleaseRehearsal() {
     console.log(
       '发布执行器演练通过：真实 deploy/rollback 入口、来源标签、配置隔离、SQLite 备份与回滚后写入保留。',
     )
+  } catch (error) {
+    originalError = error
+    throw error
   } finally {
     if (composeCreated) {
       try {
@@ -463,12 +470,12 @@ export async function runReleaseRehearsal() {
     } catch {
       // 清理仅针对本次随机命名的恢复演练卷。
     }
-    assert(scratch.startsWith(join(tmpdir(), 'mindme-release-rehearsal-')))
     try {
-      await rm(scratch, { recursive: true, force: true })
-    } catch {
-      // 隔离目录清理失败通过任务错误显式暴露，不删除其他临时目录。
-      throw new Error(`隔离发布目录未能清理：${scratch}`)
+      await cleanupSandbox(scratch)
+    } catch (cleanupError) {
+      if (originalError)
+        throw new AggregateError([originalError, cleanupError], '隔离演练和临时目录清理均失败')
+      throw cleanupError
     }
   }
 }
