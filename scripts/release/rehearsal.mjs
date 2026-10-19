@@ -320,8 +320,9 @@ export async function runReleaseRehearsal() {
       'node',
       candidateImage,
       '-e',
-      "const fs=require('node:fs');fs.copyFileSync('/source/backup.sqlite','/restore/mindme.sqlite');fs.chownSync('/restore',1000,1000);fs.chownSync('/restore/mindme.sqlite',1000,1000)",
+      "const fs=require('node:fs');fs.copyFileSync('/source/backup.sqlite','/restore/mindme.sqlite');fs.chownSync('/restore',1000,1000);fs.chmodSync('/restore',0o700);fs.chownSync('/restore/mindme.sqlite',1000,1000);fs.chmodSync('/restore/mindme.sqlite',0o600)",
     ])
+    // SQLite WAL 模式可能创建 SHM/WAL；仅恢复副本卷可写，源备份始终只读。
     const restored = command('docker', [
       'run',
       '--rm',
@@ -330,7 +331,7 @@ export async function runReleaseRehearsal() {
       '--user',
       '1000:1000',
       '-v',
-      `${restoreVolume}:/restore:ro`,
+      `${restoreVolume}:/restore`,
       '--entrypoint',
       'node',
       candidateImage,
