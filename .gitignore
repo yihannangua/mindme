@@ -50,3 +50,6 @@ coverage/
 
 # 本机 npm 凭据配置不公开
 .npmrc
+
+# 固定 SHA 发布产物与本地演练报告
+/release-artifacts/

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium } from 'playwright'
+import { runReleaseRehearsal } from './release/rehearsal.mjs'
 
 // 只在独立 Compose 项目和临时卷中演练，不读取现有部署配置或正式数据。
 const project = `mindme-ci-${Date.now()}`
@@ -22,9 +23,14 @@ const image = `mindme:${project}`
 const restoredVolume = `${project}-restored`
 const restoredContainer = `${project}-restored`
 const env = { ...process.env, MINDME_RELEASE: project, MINDME_PORT: '8794' }
-const docker = (args, capture = false) =>
-  execFileSync('docker', args, { env, stdio: capture ? 'pipe' : 'inherit', encoding: 'utf8' })
-const compose = (args, local = false, capture = false) =>
+const rehearsalSecret = randomBytes(48).toString('base64url')
+const docker = (args, capture = false, runEnv = env) =>
+  execFileSync('docker', args, {
+    env: runEnv,
+    stdio: capture ? 'pipe' : 'inherit',
+    encoding: 'utf8',
+  })
+const compose = (args, local = false, capture = false, runEnv = env) =>
   docker(
     [
       'compose',
@@ -36,6 +42,7 @@ const compose = (args, local = false, capture = false) =>
       ...args,
     ],
     capture,
+    runEnv,
   )
 const dbSummary = `
   const { DatabaseSync } = require('node:sqlite');
@@ -69,7 +76,7 @@ try {
     [
       'PUBLIC_ORIGIN=https://mindme.example',
       'AUTH_MODE=passkey',
-      `SESSION_SECRET=${randomBytes(48).toString('base64url')}`,
+      `SESSION_SECRET=${rehearsalSecret}`,
       'MIGRATION_REQUIRED=true',
       '',
     ].join('\n'),
@@ -211,7 +218,10 @@ try {
   await page.getByRole('button', { name: '账号与同步', exact: true }).click()
   await page.getByRole('button', { name: '使用 Passkey 登录', exact: true }).click()
   await page.getByText('已登录，修改会在本地保存后自动同步。', { exact: true }).waitFor()
-  console.log('容器演练通过：生产保护、空库初始化、Passkey/恢复码、独立卷备份恢复和恢复后登录。')
+  await docker(['rm', '-f', restoredContainer], true)
+
+  compose(['up', '-d', '--wait', '--wait-timeout', '90'], true)
+  await runReleaseRehearsal()
 } finally {
   await browser?.close()
   for (const action of [

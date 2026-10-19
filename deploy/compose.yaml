@@ -4,12 +4,18 @@ services:
     image: mindme:${MINDME_RELEASE:-local}
     build:
       context: ..
-      dockerfile: deploy/Dockerfile
+      dockerfile: ${MINDME_DOCKERFILE:-deploy/Dockerfile}
       args:
         NODE_IMAGE: ${MINDME_NODE_IMAGE:-node:24-bookworm-slim}
+        SOURCE_REPOSITORY: ${MINDME_SOURCE_REPOSITORY:-unknown}
+        SOURCE_SHA: ${MINDME_SOURCE_SHA:-unknown}
+        SOURCE_CI_RUN: ${MINDME_SOURCE_CI_RUN:-unknown}
+        SOURCE_PACKAGE_SHA256: ${MINDME_SOURCE_PACKAGE_SHA256:-unknown}
+        APP_VERSION: ${MINDME_APP_VERSION:-unknown}
     restart: unless-stopped
     init: true
-    env_file: server.env
+    env_file:
+      - ${MINDME_SERVER_ENV:-server.env}
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -19,7 +25,7 @@ services:
     ports:
       - '127.0.0.1:${MINDME_PORT:-3180}:3180'
     volumes:
-      - mindme-data:/var/lib/mindme
+      - ${MINDME_DATA_DIR:-mindme-data}:/var/lib/mindme
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
