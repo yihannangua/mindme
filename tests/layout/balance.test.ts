@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { children, makeNode, createMap } from '../../src/domain/model'
 import { execute } from '../../src/domain/commands'
 import { diffSpace } from '../../src/domain/operations'
+import { layoutTree } from '../../src/layout/tree'
 import { ctx, first, seed } from '../helpers'
 
 function unbalanced() {
@@ -30,6 +31,39 @@ function unbalanced() {
 }
 
 describe('自动均衡布局', () => {
+  it('重新均衡左右一级分支后仍按原 order 保持顺时针显示顺序', () => {
+    const source = seed(),
+      map = first(source)
+    map.nodes[map.rootId].position = { x: 120, y: -80 }
+    for (let index = 0; index < 4; index++) {
+      const id = `branch-${index}`,
+        branch = makeNode(id, map.rootId, `分支${index}`, index)
+      map.nodes[id] = branch
+      branch.side = index % 2 === 0 ? 1 : -1
+      if (index % 2 === 1)
+        for (let childIndex = 0; childIndex < 8; childIndex++) {
+          const id = `${branch.id}-child-${childIndex}`
+          map.nodes[id] = {
+            ...makeNode(id, branch.id, `子主题${childIndex}`, childIndex),
+            side: branch.side,
+          }
+        }
+    }
+
+    const arranged = first(execute(source, map.id, { type: 'layout' }, ctx(2000)).space),
+      layout = layoutTree(arranged),
+      clockwise = [
+        ...layout.nodes
+          .filter((node) => node.node.parentId === map.rootId && node.side === 1)
+          .sort((a, b) => a.y - b.y),
+        ...layout.nodes
+          .filter((node) => node.node.parentId === map.rootId && node.side === -1)
+          .sort((a, b) => b.y - a.y),
+      ].map((node) => node.node.id)
+
+    expect(clockwise).toEqual(children(arranged, map.rootId).map((node) => node.id))
+  })
+
   it('按原顺序均衡一级分支方向，清除整图偏移且保留内容、层级和主题顺序', () => {
     const source = unbalanced(),
       before = structuredClone(first(source)),
@@ -61,7 +95,7 @@ describe('自动均衡布局', () => {
     map.nodes['branch-0'].collapsed = true
     const after = first(execute(source, map.id, { type: 'layout' }, ctx()).space)
     expect(after.nodes['branch-0'].collapsed).toBe(true)
-    expect(after.nodes['branch-1'].side).toBe(-1)
+    expect(after.nodes['branch-1'].side).toBe(1)
     expect(after.nodes['branch-0'].side).toBe(1)
     expect(after.nodes['branch-0-0'].position).toBeNull()
     expect(after.nodes['branch-0-0'].side).toBe(1)

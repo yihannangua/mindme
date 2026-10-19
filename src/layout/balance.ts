@@ -32,13 +32,21 @@ export function balanceMap(map: MapContent): boolean {
   const branches = (index.get(map.rootId) ?? [])
     .map((node) => ({ node, height: height(node) }))
     .sort((a, b) => a.node.order - b.node.order || a.node.id.localeCompare(b.node.id))
-  // 按原有主题顺序遍历，只把每个分支放到当前较轻的一侧，避免布局改变节点顺序。
+  // 只在顺序中选择一个左右分界，避免贪心分配造成两侧交错并改变顺时针顺序。
+  const total = branches.reduce((sum, branch) => sum + branch.height, 0)
   let right = 0,
-    left = 0
-  for (const branch of branches) {
-    const side = right <= left ? 1 : -1
-    if (side === 1) right += branch.height
-    else left += branch.height
+    split = 0,
+    difference = total
+  for (let index = 0; index <= branches.length; index++) {
+    const nextDifference = Math.abs(total - right * 2)
+    if (nextDifference <= difference) {
+      difference = nextDifference
+      split = index
+    }
+    if (index < branches.length) right += branches[index].height
+  }
+  for (const [branchIndex, branch] of branches.entries()) {
+    const side = branchIndex < split ? 1 : -1
     const stack = [branch.node]
     while (stack.length) {
       const node = stack.pop()!

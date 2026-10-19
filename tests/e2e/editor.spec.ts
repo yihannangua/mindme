@@ -151,6 +151,24 @@ test('方向键不选择折叠节点，未选中时不跳转，Option 排序快�
   await expect(branch).toHaveClass(/selected/)
 })
 
+test('Alt 下始终顺时针、Alt 上始终逆时针调整左侧根分支', async ({ page }) => {
+  await page.goto('/')
+  const branch = page.getByRole('button', { name: '节点 灵感与收集', exact: true }),
+    next = page.getByRole('button', { name: '节点 值得记住的事', exact: true }),
+    canvas = page.getByLabel('脑图画布', { exact: true })
+  await branch.click()
+  const before = (await branch.boundingBox())!,
+    nextBefore = (await next.boundingBox())!
+  expect(before.y).toBeGreaterThan(nextBefore.y)
+  await canvas.press('Alt+ArrowDown')
+  await expect.poll(async () => (await branch.boundingBox())!.y).toBeLessThan(before.y)
+  const top = (await branch.boundingBox())!.y
+  await canvas.press('Alt+ArrowDown')
+  await expect.poll(async () => (await branch.boundingBox())!.y).toBe(top)
+  await canvas.press('Alt+ArrowUp')
+  await expect.poll(async () => (await branch.boundingBox())!.y).toBeGreaterThan(top)
+})
+
 test('编辑、中文组合及其他输入框内方向键不切换节点，退出编辑后恢复导航', async ({ page }) => {
   await page.goto('/')
   await root(page).dblclick()
@@ -735,18 +753,26 @@ test('自动布局均衡整张脑图、清除手动位置，保留多选和折�
   await expect(page.locator('.mind-node.selected')).toHaveCount(2)
 })
 
-test('未选节点也可自动布局，视角适应不改变节点顺序，空画布时按钮禁用', async ({ page }) => {
+test('未选节点也可自动布局，已平衡时保持顺序和位置，空画布时按钮禁用', async ({ page }) => {
   await page.goto('/')
   const branch = page.getByRole('button', { name: '节点 下一步行动', exact: true }),
     button = page.getByRole('button', { name: '自动布局', exact: true })
   await expect(branch).toBeVisible()
   await expect(page.locator('.mind-node.selected')).toHaveCount(0)
-  const before = await branch.getAttribute('transform')
+  const before = await branch.getAttribute('transform'),
+    orderBefore = await page
+      .locator('.mind-node')
+      .evaluateAll((items) => items.map((item) => item.getAttribute('data-node-id')))
   await button.click()
   await expect(page.getByText('已均衡布局', { exact: true })).toBeVisible()
   await expect(page.locator('.mind-node.selected')).toHaveCount(0)
   const after = await branch.getAttribute('transform')
-  expect(after).not.toBe(before)
+  expect(after).toBe(before)
+  expect(
+    await page
+      .locator('.mind-node')
+      .evaluateAll((items) => items.map((item) => item.getAttribute('data-node-id'))),
+  ).toEqual(orderBefore)
   await button.click()
   await expect(branch).toHaveAttribute('transform', after!)
   await page.getByRole('button', { name: '关闭 我的第一个脑图', exact: true }).click()
