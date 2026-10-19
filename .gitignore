@@ -1,0 +1,52 @@
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 本地环境配置与凭据；可提交不含真实凭据的示例
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+
+# 日志和临时文件
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+
+# 依赖、构建产物与工具缓存
+node_modules/
+dist/
+.vite/
+
+# 本地项目知识库，按搭建指南默认不纳入版本管理
+.obsidian-vault/
+
+# Worker 模拟器与浏览器测试产物
+.wrangler/
+.dev.vars
+.dev.vars.*
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo
+
+# 独立服务器构建、数据库与完整空间迁移文件
+/dist-server/
+/data/
+/migration/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/deploy/server.env
+
+/deploy/.env
+
+# 自托管本机覆盖与依赖审计产物
+/deploy/compose.override.yaml
+
+# 本机 npm 凭据配置不公开
+.npmrc

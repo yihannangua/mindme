@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "server",
+    "shared",
+    "src/domain",
+    "src/sync/protocol.ts",
+    "workers/auth/session.ts",
+    "workers/api/http.ts"
+  ]
+}

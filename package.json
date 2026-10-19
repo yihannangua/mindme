@@ -1,0 +1,61 @@
+{
+  "name": "mindme",
+  "private": true,
+  "version": "0.1.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build && node scripts/offline-shell.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc -b",
+    "test:prototype": "node --test docs/prototype/editor-*.test.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "dev:worker": "wrangler dev",
+    "check:worker": "tsc -p tsconfig.worker.json",
+    "build:worker": "npm run build && wrangler deploy --dry-run --env=\"\"",
+    "test:cloud": "playwright test -c playwright.worker.config.ts",
+    "format": "prettier --write src workers server shared tests scripts *.ts *.jsonc",
+    "format:check": "prettier --check src workers server shared tests scripts *.ts *.jsonc",
+    "check": "npm run typecheck && npm run check:worker && npm run check:server && npm test && npm run format:check",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/build-server.mjs",
+    "start:server": "node dist-server/index.js",
+    "check:server": "tsc -p tsconfig.server.json",
+    "test:server": "vitest run tests/server tests/workers/storage.test.ts",
+    "test:node": "playwright test -c playwright.node.config.ts && playwright test -c playwright.passkey.config.ts",
+    "deploy:cloudflare": "npm run build && wrangler deploy --env=\"\"",
+    "start": "node dist-server/index.js",
+    "test:e2e:ci": "playwright test --project=chromium --project=webkit"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
+    "@xmldom/xmldom": "^0.9.12",
+    "fflate": "^0.8.3",
+    "jose": "^6.2.12",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261016.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "fake-indexeddb": "^6.2.5",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.151.0"
+  },
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,11 @@
+# 合并到自己的 HTTPS server 块，证书配置由部署者维护。
+location / {
+    proxy_pass http://127.0.0.1:3180;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 75s;
+    client_max_body_size 24m;
+}

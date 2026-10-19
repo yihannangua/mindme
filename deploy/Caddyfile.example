@@ -1,0 +1,5 @@
+# 示例假设 Caddy 运行在宿主机；替换为自己的 HTTPS 域名。
+mindme.example {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3180
+}
