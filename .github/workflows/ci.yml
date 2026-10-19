@@ -52,3 +52,21 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e:ci
       - run: npm run test:node
+
+  container:
+    name: 容器构建与备份恢复
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # 固定 v6 提交
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # 固定 v6 提交
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:docker
