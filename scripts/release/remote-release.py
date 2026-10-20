@@ -22,15 +22,33 @@ JOBS = {"类型、格式、测试与构建", "浏览器与 Node 后端回归", "
 FIXED = {"package.json", "package-lock.json", "LICENSE", "THIRD_PARTY_NOTICES.txt",
          "deploy/compose.yaml", "deploy/release.Dockerfile"}
 REQUIRED = FIXED | {"dist/index.html", "dist-server/index.js", "dist-server/cli.js"}
-SUMMARY = """
-const {DatabaseSync}=require('node:sqlite');const {createHash}=require('node:crypto');
-const d=new DatabaseSync(process.argv[1]||process.env.DATABASE_PATH,{readOnly:true});
-const schema=d.prepare("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").all();
-const tables=schema.filter(x=>x.type==='table').map(x=>x.name);
-const content=Object.fromEntries(tables.map(t=>[t,d.prepare('SELECT * FROM "'+t.replaceAll('"','""')+'"').all().map(x=>JSON.stringify(x)).sort()]));
-const h=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
-const result={integrity:d.prepare('PRAGMA quick_check').get().quick_check,schema:h(schema),content:h(content),counts:Object.fromEntries(tables.map(t=>[t,content[t].length]))};
-d.close();if(result.integrity!=='ok')process.exit(2);console.log(JSON.stringify(result));
+
+
+COMPATIBILITY = """
+const {spawn}=require('node:child_process');
+const {randomBytes}=require('node:crypto');
+const {setTimeout:delay}=require('node:timers/promises');
+(async()=>{
+  const child=spawn(process.execPath,['dist-server/index.js'],{stdio:'ignore',env:{...process.env,
+    HOST:'127.0.0.1',PORT:'3180',PUBLIC_ORIGIN:'https://mindme.example',
+    AUTH_MODE:'passkey',SESSION_SECRET:randomBytes(48).toString('hex'),MIGRATION_REQUIRED:'false'}});
+  let exited=false;
+  const stopped=new Promise(resolve=>child.once('exit',()=>{exited=true;resolve()}));
+  try{
+    for(let i=0;i<60;i++){
+      if(exited)throw Error('隔离应用提前退出');
+      try{
+        const r=await fetch('http://127.0.0.1:3180/api/ready',{signal:AbortSignal.timeout(1000)});
+        if(r.ok&&(await r.json()).ready===true)return;
+      }catch{}
+      await delay(250);
+    }
+    throw Error('隔离应用未就绪');
+  }finally{
+    if(!exited){child.kill('SIGTERM');const timer=setTimeout(()=>child.kill('SIGKILL'),12000);
+      await stopped;clearTimeout(timer)}
+  }
+})().catch(()=>{process.exitCode=1});
 """
 
 
@@ -39,16 +57,16 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def run(args, cwd=None):
+def run(args, cwd=None, input_data=None):
     # 所有子进程输出均先捕获，失败时不把配置、令牌或数据库内容带进日志。
-    result = subprocess.run(args, cwd=cwd, text=True, stdout=subprocess.PIPE,
+    result = subprocess.run(args, cwd=cwd, input=input_data, text=True, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
     require(result.returncode == 0, f"子进程执行失败：{args[0]}（退出码 {result.returncode}）")
     return result.stdout.strip()
 
 
-def docker(*args):
-    return run(["docker", *map(str, args)])
+def docker(*args, input_data=None):
+    return run(["docker", *map(str, args)], input_data=input_data)
 
 
 def safe_name(name):
@@ -190,8 +208,9 @@ def health(config, version):
     raise RuntimeError("健康或就绪检查失败")
 
 
-def snapshot(container, path="/var/lib/mindme/mindme.sqlite"):
-    return json.loads(docker("exec", container, "node", "-e", SUMMARY, path))
+def snapshot(config, container, path="/var/lib/mindme/mindme.sqlite"):
+    return json.loads(docker("exec", "-i", container, "node", "-", path,
+                             input_data=config["summaryScript"]))
 
 
 def backup_and_compatibility(config, data, container, images, key):
@@ -199,19 +218,20 @@ def backup_and_compatibility(config, data, container, images, key):
     require(not destination.exists(), "备份名称已存在，拒绝覆盖")
     docker("exec", container, "node", "dist-server/cli.js", "backup", "/var/lib/mindme/backups/" + destination.name)
     require(destination.is_file() and stat.S_IMODE(destination.stat().st_mode) == 0o600 and destination.stat().st_size >= 4096, "备份文件权限或大小不符")
-    before = snapshot(container, "/var/lib/mindme/backups/" + destination.name)
+    before = snapshot(config, container, "/var/lib/mindme/backups/" + destination.name)
     with tempfile.TemporaryDirectory(prefix="mindme-restore-") as directory:
         restored = pathlib.Path(directory) / "mindme.sqlite"
         shutil.copyfile(destination, restored)
         os.chown(directory, 1000, 1000)
         os.chown(restored, 1000, 1000)
         restored.chmod(0o600)
-        args = ["run", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp", "--user", "1000:1000",
+        args = ["run", "-i", "--rm", "--network", "none", "--read-only", "--tmpfs", "/tmp", "--user", "1000:1000",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-v", directory + ":/var/lib/mindme",
                 "-e", "DATABASE_PATH=/var/lib/mindme/mindme.sqlite", "--entrypoint", "node"]
         for image in images:
-            docker(*args, image, "dist-server/cli.js", "inspect")
-            after = json.loads(docker(*args, image, "-e", SUMMARY))
+            # 直接启动镜像内应用，避免旧 inspect 将全部历史反序列化到内存。
+            docker(*args, image, "-", input_data=COMPATIBILITY)
+            after = json.loads(docker(*args, image, "-", input_data=config["summaryScript"]))
             require(after == before, "备份恢复或新旧应用兼容性核验失败：结构或内容发生变化")
     return {"path": str(destination), "mode": "600", "size": destination.stat().st_size,
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(), "quickCheck": before["integrity"],
@@ -275,11 +295,11 @@ def apply(config, root, env, data):
         live_id = compose(config, target, "ps", "-q", "mindme")
         live = json.loads(docker("inspect", live_id))[0]
         require(live["Image"] == image_info["Id"], "运行镜像与已验证摘要不符")
-        require(snapshot(live_id)["schema"] == backup["schema"], "应用改变数据结构，停止自动回滚")
+        require(snapshot(config, live_id)["schema"] == backup["schema"], "应用改变数据结构，停止自动回滚")
         atomic_current(root, target)
     except Exception:
         ids = compose(config, target, "ps", "-q", "mindme")
-        require(ids and snapshot(ids)["schema"] == backup["schema"], "数据结构或实例状态不明，停止自动回滚并保全数据")
+        require(ids and snapshot(config, ids)["schema"] == backup["schema"], "数据结构或实例状态不明，停止自动回滚并保全数据")
         compose(config, current, "up", "-d", "--no-build", "--wait", "--wait-timeout", "90")
         health(config, old_version)
         atomic_current(root, current)
@@ -295,10 +315,13 @@ def apply(config, root, env, data):
 
 
 def main(config):
+    summary = config.get("summaryScript", "")
+    require(isinstance(summary, str) and 0 < len(summary) <= 32768,
+            "数据库核验脚本缺失或过长")
     root, env, data = validate_config(config)
     if config["mode"] == "plan":
         current, info = inspect(config, root, data)
-        require(snapshot(config["container"])["integrity"] == "ok", "数据库完整性检查失败")
+        require(snapshot(config, config["container"])["integrity"] == "ok", "数据库完整性检查失败")
         print(json.dumps({"mode": "plan", "imageId": info["Image"], "envMode": "600", "current": str(current)}))
         return
     with (root / ".release.lock").open("a") as lock:

@@ -236,6 +236,7 @@ if (command === 'package') {
       rollbackRelease: args['--rollback-release'],
       nodeImage: args['--node-image'] ?? 'node:24-bookworm-slim',
       maintenance: args['--maintenance'],
+      summaryScript: readFileSync(new URL('./database-summary.cjs', import.meta.url), 'utf8'),
     }
     const ssh = [
       '-o',

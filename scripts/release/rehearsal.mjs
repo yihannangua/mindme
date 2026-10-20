@@ -106,6 +106,10 @@ function callRemote(sourceRoot, config) {
 
 export async function runReleaseRehearsal() {
   const sourceRoot = await realpath(process.cwd())
+  const summaryScript = await readFile(
+    join(sourceRoot, 'scripts/release/database-summary.cjs'),
+    'utf8',
+  )
   const sha = command('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot }).trim()
   assert.match(sha, /^[a-f0-9]{40}$/, '隔离演练需要完整源码 SHA')
 
@@ -258,6 +262,7 @@ export async function runReleaseRehearsal() {
       rehearsal: true,
       sandbox: scratch,
       maintenance: 'confirmed',
+      summaryScript,
     }
 
     callRemote(sourceRoot, {
