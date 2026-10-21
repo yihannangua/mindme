@@ -305,7 +305,7 @@ export default function App() {
     async (command: Command) => {
       if (
         selection.ids.length > 1 &&
-        !['delete-many', 'fold', 'layout', 'reparent-many'].includes(command.type)
+        !['delete-many', 'fold', 'layout', 'reparent-many', 'marker-many'].includes(command.type)
       )
         setSelectedId(selectedId)
       try {
@@ -1004,7 +1004,7 @@ export default function App() {
           </div>
           {selection.ids.length > 1 && (
             <p className="muted small selection-note">
-              可拖动任一已选节点整批挂接。下方显示当前节点，编辑和新增会收为当前节点；复制、剪切、删除对全部所选分支生效。
+              可拖动任一已选节点整批挂接。下方显示当前节点，编辑和新增会收为当前节点；图标对全部所选节点生效；复制、剪切、删除对全部所选分支生效。
             </p>
           )}
           <section>
@@ -1072,11 +1072,18 @@ export default function App() {
                     <button
                       key={value}
                       aria-label={`${category === 'priority' ? '优先级' : category === 'progress' ? '进度' : '旗子'} ${category === 'progress' ? `${index}/8` : value}`}
-                      aria-pressed={node?.markers[category] === value}
+                      aria-pressed={
+                        selection.ids.length > 0 &&
+                        selection.ids.every((id) => map?.nodes[id]?.markers[category] === value)
+                      }
                       disabled={!node}
                       onClick={(event) => {
                         if (!node) return
-                        run({ type: 'marker', nodeId: node.id, category, value })
+                        run(
+                          selection.ids.length > 1
+                            ? { type: 'marker-many', nodeIds: selection.ids, category, value }
+                            : { type: 'marker', nodeId: node.id, category, value },
+                        )
                         // 鼠标点选后回到画布，键盘激活按钮时保留按钮焦点。
                         if (event.detail > 0) setFocusRequest((request) => request + 1)
                       }}
@@ -1089,7 +1096,9 @@ export default function App() {
                 </div>
               </div>
             ))}
-            <p className="muted small">同类替换，再点移除；不同类别可以同时保留。</p>
+            <p className="muted small">
+              同类替换，不同类别可并存；多选时统一设置，全部已有该标记时再点统一移除。
+            </p>
           </section>
           <section>
             <h3>分支操作</h3>

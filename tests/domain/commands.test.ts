@@ -82,6 +82,53 @@ describe('领域命令与不变量', () => {
         edit(space, { type: 'marker', nodeId, category: 'progress', value }),
       ).not.toThrow()
   })
+  it('批量标记混合状态统一设置、同类替换、异类保留且仅修改所选节点', () => {
+    let space = seed()
+    const root = first(space).rootId
+    space = edit(space, { type: 'add', nodeId: root, kind: 'child', text: '子节点' })
+    const child = children(first(space), root)[0].id
+    space = edit(space, { type: 'add', nodeId: child, kind: 'child', text: '未选后代' })
+    const descendant = children(first(space), child)[0].id
+    for (const category of ['priority', 'progress', 'flag'] as const) {
+      const [value, other] = MARKERS[category]
+      space = edit(space, { type: 'marker', nodeId: root, category, value })
+      space = edit(space, { type: 'marker', nodeId: child, category, value: other })
+      const before = clone(space)
+      space = edit(space, { type: 'marker-many', nodeIds: [root, child, root], category, value })
+      expect(first(space).nodes[root].markers[category]).toBe(value)
+      expect(first(space).nodes[child].markers[category]).toBe(value)
+      expect(first(space).nodes[descendant]).toEqual(first(before).nodes[descendant])
+      expect(first(before).nodes[child].markers[category]).toBe(other)
+      const undo = guardedChanges(space, undoEntry(diffSpace(before, space)).inverse)
+      expect(first(applyChanges(space, undo, 3000)).nodes).toEqual(first(before).nodes)
+    }
+    expect(first(space).nodes[root].markers).toEqual({
+      priority: '①',
+      progress: 'start',
+      flag: 'red',
+    })
+    space = edit(space, {
+      type: 'marker-many',
+      nodeIds: [root, child],
+      category: 'flag',
+      value: 'red',
+    })
+    expect(first(space).nodes[root].markers).toEqual({ priority: '①', progress: 'start' })
+    expect(first(space).nodes[child].markers).toEqual({ priority: '①', progress: 'start' })
+  })
+  it('批量标记拒绝空选择、失效节点和非法标记，失败不污染原对象', () => {
+    const space = seed(),
+      root = first(space).rootId,
+      before = clone(space)
+    for (const nodeIds of [[], [root, 'missing']])
+      expect(() =>
+        edit(space, { type: 'marker-many', nodeIds, category: 'flag', value: 'blue' }),
+      ).toThrow()
+    expect(() =>
+      edit(space, { type: 'marker-many', nodeIds: [root], category: 'flag', value: 'invalid' }),
+    ).toThrow('标记不合法')
+    expect(space).toEqual(before)
+  })
   it('同级排序跨侧交换而不改变父子关系，边界不循环', () => {
     let space = seed(),
       root = first(space).rootId

@@ -14,6 +14,7 @@ export type Command =
   | { type: 'move'; nodeId: string; position: { x: number; y: number }; side?: -1 | 1 }
   | { type: 'fold'; nodeId: string; recursive?: boolean; value?: boolean }
   | { type: 'marker'; nodeId: string; category: MarkerCategory; value: string }
+  | { type: 'marker-many'; nodeIds: string[]; category: MarkerCategory; value: string }
   | { type: 'layout' }
   | { type: 'trash' }
   | { type: 'untrash' }
@@ -151,10 +152,21 @@ export function execute(
       for (const id of ids) map.nodes[id].collapsed = value
       break
     }
-    case 'marker': {
+    case 'marker':
+    case 'marker-many': {
       assert((MARKERS[command.category] as readonly string[]).includes(command.value), '标记不合法')
-      if (node!.markers[command.category] === command.value) delete node!.markers[command.category]
-      else node!.markers[command.category] = command.value
+      const ids = command.type === 'marker' ? [command.nodeId] : [...new Set(command.nodeIds)]
+      assert(ids.length > 0, '请先选择节点')
+      assert(
+        ids.every((id) => !!map.nodes[id]),
+        '节点不存在',
+      )
+      // 混合状态统一设置；仅全部已有同一标记时统一移除，整批作为一次命令撤销。
+      const remove = ids.every((id) => map.nodes[id].markers[command.category] === command.value)
+      for (const id of ids) {
+        if (remove) delete map.nodes[id].markers[command.category]
+        else map.nodes[id].markers[command.category] = command.value
+      }
       break
     }
     case 'layout':
