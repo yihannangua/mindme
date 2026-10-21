@@ -1,6 +1,6 @@
 # mindme
 
-支持离线编辑与实时同步的自托管脑图应用，当前版本为 **0.1.2**。前端可独立在本地使用；需要跨设备同步时，可部署 Node.js、SQLite 和 WebSocket 后端，并使用 Passkey 登录。
+支持离线编辑与实时同步的自托管脑图应用，当前版本为 **0.1.3**。前端可独立在本地使用；需要跨设备同步时，可部署 Node.js、SQLite 和 WebSocket 后端，并使用 Passkey 登录。
 
 ![mindme 演示脑图](docs/images/editor.png)
 
