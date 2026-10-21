@@ -73,6 +73,53 @@ for (const marker of ['优先级 ①', '进度 4/8', '旗子 blue']) {
   })
 }
 
+for (const marker of ['优先级 ①', '进度 4/8', '旗子 blue']) {
+  test(`多选设置标记统一生效、保留选择、整批撤销及刷新恢复：${marker}`, async ({ page }) => {
+    await page.goto('/')
+    const a = page.getByRole('button', { name: '节点 想要探索的事', exact: true }),
+      b = page.getByRole('button', { name: '节点 下一步行动', exact: true }),
+      untouched = page.getByRole('button', { name: '节点 值得记住的事', exact: true }),
+      button = page.getByRole('button', { name: marker, exact: true }),
+      selection = page.locator('.mind-node.selected')
+    await a.click()
+    await button.click()
+    await expect(a.locator('svg')).toHaveCount(1)
+    await b.click()
+    await a.click({ modifiers: ['Alt'] })
+    await expect(selection).toHaveCount(2)
+    // 当前节点已带标记但另一个没有，按钮应表示混合状态，点击统一添加。
+    await expect(button).toHaveAttribute('aria-pressed', 'false')
+    await button.click()
+    await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(selection).toHaveCount(2)
+    await expect(a.locator('svg')).toHaveCount(1)
+    await expect(b.locator('svg')).toHaveCount(1)
+    await expect(untouched.locator('svg')).toHaveCount(0)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(a.locator('svg')).toHaveCount(1)
+    await expect(b.locator('svg')).toHaveCount(0)
+    await expect(selection).toHaveCount(2)
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect(b.locator('svg')).toHaveCount(1)
+    await button.focus()
+    await button.press('Space')
+    await expect(button).toBeFocused()
+    await expect(a.locator('svg')).toHaveCount(0)
+    await expect(b.locator('svg')).toHaveCount(0)
+    await expect(selection).toHaveCount(2)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(a.locator('svg')).toHaveCount(1)
+    await expect(b.locator('svg')).toHaveCount(1)
+    await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(selection).toHaveCount(2)
+    await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(a.locator('svg')).toHaveCount(1)
+    await expect(b.locator('svg')).toHaveCount(1)
+    await expect(untouched.locator('svg')).toHaveCount(0)
+  })
+}
+
 test('键盘聚焦标记按钮仍可用回车和空格设置、替换及移除', async ({ page }) => {
   await page.goto('/')
   const source = page.getByRole('button', { name: '节点 想要探索的事', exact: true }),
