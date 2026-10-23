@@ -99,8 +99,9 @@ test('常用图标最多五个，次数优先且同次数最近优先，切图�
   await page.getByRole('dialog').getByRole('button', { name: /创建/ }).click()
   expect(await names()).toEqual(expected)
   await page.reload()
-  expect(await names()).toEqual(expected)
+  // 刷新后先等本地空间与工具栏恢复，再核对排序，避免在启动页读取空列表。
   await expect(group.getByRole('button')).toHaveCount(5)
+  expect(await names()).toEqual(expected)
   await page.screenshot({ path: testInfo.outputPath('常用图标-桌面.png') })
   await page.setViewportSize({ width: 1100, height: 900 })
   await expect(group.getByRole('button')).toHaveCount(5)
