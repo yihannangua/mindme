@@ -20,6 +20,7 @@ import {
   Trash2,
   History,
   Keyboard,
+  BookOpen,
   FileText,
   Pin,
   X,
@@ -61,7 +62,8 @@ import { SyncClient, type ConnectionStatus, type SessionInfo } from './sync/clie
 import { MarkerIcon } from './components/MarkerIcon'
 import { Dialog } from './components/Dialog'
 import { ImportDialog } from './workspace/ImportDialog'
-import { shortcuts } from './workspace/Shortcuts'
+import { Help } from './workspace/Help'
+import { shortcutGroups, shortcutKey, shortcutPlatform } from './workspace/Shortcuts'
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 import { APP_VERSION } from './version'
 
@@ -877,6 +879,10 @@ export default function App() {
               <Keyboard size={14} />
               快捷键
             </button>
+            <button onClick={() => openDialog('help')}>
+              <BookOpen size={14} />
+              使用指南
+            </button>
             {!!state.snapshot.drafts.length && (
               <button className="danger" onClick={() => openDialog('drafts')}>
                 冲突草稿 · {state.snapshot.drafts.length}
@@ -1466,19 +1472,25 @@ export default function App() {
         </Dialog>
       )}
       {dialog === 'shortcuts' && (
-        <Dialog title="macOS 快捷键" close={() => setDialog('')} wide>
+        <Dialog title="快捷键" close={() => setDialog('')} wide>
           <p className="muted">
             画布聚焦时使用；侧栏快捷键也可在工具栏操作。文字输入、中文输入法组合和系统文字剪贴板优先处理。
           </p>
           <div className="shortcuts">
-            {shortcuts.map(([key, action]) => (
-              <div key={key}>
-                <span>{action}</span>
-                <kbd>{key}</kbd>
-              </div>
-            ))}
+            {shortcutGroups
+              .flatMap((group) => group.shortcuts)
+              .map(({ key, action }) => (
+                <div key={key}>
+                  <span>{action}</span>
+                  <kbd>{shortcutKey(key, shortcutPlatform())}</kbd>
+                </div>
+              ))}
           </div>
+          <button onClick={() => setDialog('help-shortcuts')}>在使用指南中搜索快捷键 →</button>
         </Dialog>
+      )}
+      {(dialog === 'help' || dialog === 'help-shortcuts') && (
+        <Help close={() => setDialog('')} shortcuts={dialog === 'help-shortcuts'} />
       )}
       {dialog === 'drafts' && (
         <Dialog title="冲突草稿" close={() => setDialog('')} wide>
