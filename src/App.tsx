@@ -276,9 +276,9 @@ export default function App() {
     [],
   )
   const commandForMap = useCallback(
-    async (mapId: string, action: Command) => {
+    async (mapId: string, action: Command, applied?: (selectedId: string | undefined) => void) => {
       try {
-        const selected = await appStore.command(mapId, action)
+        const selected = await appStore.command(mapId, action, applied)
         return selected
       } catch (error) {
         notify(message(error))
@@ -311,8 +311,9 @@ export default function App() {
       )
         setSelectedId(selectedId)
       try {
-        const selected = await appStore.command(activeId, command)
-        if (selected) setSelectedId(selected)
+        const selected = await appStore.command(activeId, command, (id) => {
+          if (id) setSelectedId(id)
+        })
         return selected
       } catch (error) {
         notify(message(error))
@@ -435,17 +436,16 @@ export default function App() {
   }
   const importResult = useCallback(
     async (result: ImportResult, intoSelection: boolean) => {
-      let last = activeId
+      let last = activeId,
+        insertedIntoNode = false
       await appStore.transform(
         (space) => {
-          const next = importDrafts(
-            space,
-            result,
-            context(),
+          const target =
             intoSelection && selectedId && space.maps[activeId]?.nodes[selectedId]
               ? { mapId: activeId, nodeId: selectedId }
-              : undefined,
-          )
+              : undefined
+          insertedIntoNode = !!target
+          const next = importDrafts(space, result, context(), target)
           last =
             Object.keys(next.maps)
               .filter((id) => !space.maps[id])
@@ -456,8 +456,11 @@ export default function App() {
         true,
         true,
       )
-      setActiveId(last)
-      requestFit(workspace.activePaneId)
+      // 向已有节点粘贴只增加内容，保留当前选择、缩放和平移。
+      if (!insertedIntoNode) {
+        setActiveId(last)
+        requestFit(workspace.activePaneId)
+      }
     },
     [activeId, selectedId, workspace.activePaneId, requestFit],
   )

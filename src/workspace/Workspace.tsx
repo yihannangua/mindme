@@ -27,7 +27,11 @@ interface Props {
   onWorkspaceChange: (workspace: WorkspaceState) => void
   onActivate: (paneId: string) => void
   onSelection: (paneId: string, selection: NodeSelection) => void
-  onCommand: (mapId: string, command: Command) => Promise<unknown>
+  onCommand: (
+    mapId: string,
+    command: Command,
+    applied?: (selectedId: string | undefined) => void,
+  ) => Promise<unknown>
   onHistory: (mapId: string, direction: 'undo' | 'redo') => void
   paste: (event: ClipboardEvent) => void
   save: () => void
@@ -476,8 +480,9 @@ export function Workspace({
                   !['delete-many', 'fold', 'layout', 'reparent-many'].includes(command.type)
                 )
                   onSelection(pane.id, singleSelection(selection.activeId))
-                const selected = await onCommand(map.id, command)
-                if (typeof selected === 'string') onSelection(pane.id, singleSelection(selected))
+                const selected = await onCommand(map.id, command, (id) => {
+                  if (id) onSelection(pane.id, singleSelection(id))
+                })
                 return selected
               }}
               history={(direction) => onHistory(map.id, direction)}

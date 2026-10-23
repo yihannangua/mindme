@@ -184,9 +184,11 @@ export class AppStore {
     this.queue = promise.catch(() => undefined)
     return promise
   }
-  private async persist(snapshot: LocalSnapshot, atomic = false) {
+  private async persist(snapshot: LocalSnapshot, atomic = false, applied?: () => void) {
     const previous = this.view.snapshot
     this.emit({ ...(atomic ? {} : { snapshot }), status: 'saving', error: '' })
+    // 选中和键盘输入跟随内存内容发布，不等待 IndexedDB 的保存确认。
+    if (!atomic) applied?.()
     try {
       assert(this.database, '本地数据库尚未就绪')
       await this.database.save(snapshot)
@@ -195,6 +197,7 @@ export class AppStore {
         this.unpersisted = false
         this.emit({ snapshot, status: 'saved' })
       }
+      if (atomic) applied?.()
     } catch (error) {
       if (this.view.snapshot === snapshot) {
         this.unpersisted = !atomic || this.unpersisted
@@ -213,6 +216,7 @@ export class AppStore {
     trackUndo = true,
     atomic = false,
     intent: Operation['intent'] = 'edit',
+    applied?: () => void,
   ): Promise<void> {
     return this.serial(async () => {
       const snapshot = clone(this.view.snapshot)
@@ -245,14 +249,18 @@ export class AppStore {
       }
       snapshot.space = next
       snapshot.outbox.push(operation)
-      await this.persist(snapshot, atomic)
+      await this.persist(snapshot, atomic, applied)
       if (trackUndo && mapId && atomic) {
         this.undo.set(mapId, [...(this.undo.get(mapId) ?? []), undoEntry(changes)].slice(-100))
         this.redo.delete(mapId)
       }
     })
   }
-  command(mapId: string, command: Command): Promise<string | undefined> {
+  command(
+    mapId: string,
+    command: Command,
+    applied?: (selectedId: string | undefined) => void,
+  ): Promise<string | undefined> {
     let selectedId: string | undefined
     return this.transform(
       (space) => {
@@ -268,6 +276,7 @@ export class AppStore {
       command.type !== 'purge',
       ['restore', 'purge'].includes(command.type),
       command.type === 'restore' ? 'restore' : 'edit',
+      () => applied?.(selectedId),
     ).then(() => selectedId)
   }
   history(mapId: string, direction: 'undo' | 'redo') {
