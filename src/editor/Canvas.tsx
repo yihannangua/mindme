@@ -643,9 +643,6 @@ export function Canvas({
         if (drag.current) cancelDrag()
       }}
     >
-      <div className="canvas-caption">
-        {map.title} <span>顺时针平衡图</span>
-      </div>
       <svg className="graph" width="100%" height="100%" aria-label="脑图节点与连线">
         <g
           transform={`translate(${size.width / 2 + view.x} ${size.height / 2 + view.y}) scale(${view.zoom})`}
@@ -836,10 +833,6 @@ export function Canvas({
         </div>
       )}
       <div className="canvas-bottom">
-        <span>
-          {Object.keys(map.nodes).length} 个节点 · {layout.nodes.length} 个可见
-          {selection.ids.length > 1 ? ` · 已选 ${selection.ids.length} 个` : ''}
-        </span>
         <div>
           <button aria-label="缩小" onClick={() => zoomAt(1 / 1.15)}>
             −
@@ -879,7 +872,6 @@ export function Canvas({
           </div>
         </div>
       </div>
-      <div className="canvas-tip">双击 / F2 编辑 · 滚轮缩放 · 空白处按住左键拖动画布</div>
     </div>
   )
 }

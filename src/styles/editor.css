@@ -350,6 +350,21 @@ button.primary:hover {
   align-items: center;
   gap: 4px;
 }
+.frequent-markers {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.frequent-markers button {
+  width: 30px;
+  height: 30px;
+  padding: 4px;
+}
+.frequent-markers button[aria-pressed='true'] {
+  background: #e8f0f5;
+  border-color: #8eb0ca;
+}
 .canvas {
   flex: 1;
   min-height: 0;
@@ -640,19 +655,6 @@ button.primary:hover {
   display: block;
   user-select: none;
 }
-.canvas-caption {
-  position: absolute;
-  left: 24px;
-  top: 20px;
-  font-size: 10px;
-  color: #96a3ac;
-  pointer-events: none;
-}
-.canvas-caption span {
-  margin-left: 12px;
-  padding-left: 12px;
-  border-left: 1px solid #dde4e9;
-}
 .edge {
   fill: none;
   stroke-width: 2;
@@ -742,7 +744,7 @@ button.primary:hover {
   right: 20px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   color: #99a6ae;
   font-size: 10px;
   pointer-events: none;
@@ -833,14 +835,6 @@ button.primary:hover {
 .canvas-bottom span {
   min-width: 35px;
   text-align: center;
-}
-.canvas-tip {
-  position: absolute;
-  bottom: 57px;
-  left: 24px;
-  color: #a0adb6;
-  font-size: 10px;
-  pointer-events: none;
 }
 .canvas[data-style='compact'] .edge {
   stroke: var(--compact-ink);
@@ -1411,13 +1405,6 @@ button.primary:hover {
   }
   .toolbar-right {
     margin-left: 0;
-  }
-  .canvas-tip {
-    max-width: 60%;
-    font-size: 9px;
-  }
-  .canvas-caption span {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
