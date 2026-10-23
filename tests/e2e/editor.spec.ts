@@ -60,7 +60,7 @@ test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('当前版本 v0.1.5', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('当前版本 v0.1.6', { exact: true })).toBeVisible()
   await root(page).click()
   await page.getByLabel('脑图画布', { exact: true }).press('Tab')
   await page.getByLabel('脑图画布', { exact: true }).focus()

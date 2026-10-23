@@ -5,21 +5,27 @@ export function Dialog({
   close,
   children,
   wide = false,
+  className,
 }: {
   title: string
   close: () => void
   children: ReactNode
   wide?: boolean
+  className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const dialog = ref.current!
+    const previousFocus = document.activeElement
     dialog.showModal()
-    return () => dialog.close()
+    return () => {
+      dialog.close()
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
+    }
   }, [])
   return (
     <dialog
-      className={wide ? 'dialog wide' : 'dialog'}
+      className={['dialog', wide && 'wide', className].filter(Boolean).join(' ')}
       ref={ref}
       onCancel={(event) => {
         event.preventDefault()
