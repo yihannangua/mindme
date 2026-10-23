@@ -294,9 +294,9 @@ export function Canvas({
     handledEditRequest.current = editRequest
     if (selectedId) startEdit(selectedId)
   }, [editRequest]) // 显式编辑请求才进入，避免切图或远端更新抢走焦点。
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (edit) {
-      input.current?.focus()
+      input.current?.focus({ preventScroll: true })
       if (selectTextOnEdit.current && !composing.current) input.current?.select()
     } else if (selectedId && container.current?.contains(document.activeElement)) {
       input.current?.focus({ preventScroll: true })
@@ -388,6 +388,12 @@ export function Canvas({
       return
     }
     if (!selectedId || !map.nodes[selectedId]) return
+    // 焦点仍在画布容器时也能立即开始编辑，不依赖透明输入框的焦点时序。
+    if (!mod && !event.altKey && key === ' ' && event.target === event.currentTarget) {
+      event.preventDefault()
+      startEdit(selectedId)
+      return
+    }
     let action: Command | undefined
     if (key === 'tab') action = { type: 'add', kind: 'child', nodeId: selectedId }
     if (key === 'enter')

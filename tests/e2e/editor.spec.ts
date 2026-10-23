@@ -3,12 +3,64 @@ import { makeNode } from '../../src/domain/model'
 import type { Backup } from '../../src/importers/backup'
 const root = (page: import('@playwright/test').Page) =>
   page.getByRole('button', { name: '节点 我的第一个脑图', exact: true })
+
+test('本地保存未完成时 Tab 新节点已选中，立即空格编辑并保留输入', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+  const rootNode = page.getByRole('button', { name: '节点 我的第一个脑图', exact: true })
+  await rootNode.click()
+  await page.evaluate(async (modulePath) => {
+    const { LocalDatabase } = await import(modulePath)
+    const save = LocalDatabase.prototype.save
+    // 隔离测试页延迟落盘，验证编辑不等待写盘，且保存完成不会抢回选择。
+    LocalDatabase.prototype.save = async function (...args: unknown[]) {
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      return save.apply(this, args)
+    }
+  }, '/src/persistence/database.ts')
+  await page.keyboard.press('Tab')
+  const added = page.getByRole('button', { name: '节点 新主题', exact: true })
+  await expect(added).toHaveClass(/selected/, { timeout: 700 })
+  await page.keyboard.press('Space')
+  const input = page.getByLabel('编辑节点文字', { exact: true })
+  await expect(input).toBeFocused({ timeout: 700 })
+  await expect(input).toHaveValue('新主题')
+  await input.fill('即时编辑新节点')
+  await input.press('Enter')
+  await expect(page.getByRole('button', { name: '节点 即时编辑新节点', exact: true })).toBeVisible()
+  await expect(rootNode).toBeVisible()
+  await rootNode.click()
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible({ timeout: 12000 })
+  await expect(rootNode).toHaveClass(/selected/)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '节点 即时编辑新节点', exact: true })).toBeVisible()
+})
+test('画布容器按空格立即编辑，缩放按钮按空格仍激活按钮', async ({ page }) => {
+  await page.goto('/')
+  await root(page).click()
+  const canvas = page.getByLabel('脑图画布', { exact: true }),
+    zoom = page.getByRole('button', { name: '缩小', exact: true })
+  const before = await canvas.locator('.graph > g').getAttribute('transform')
+  await zoom.focus()
+  await zoom.press('Space')
+  await expect(canvas.locator('.graph > g')).not.toHaveAttribute('transform', before!)
+  await expect(page.getByLabel('编辑节点文字', { exact: true })).toHaveCount(0)
+  // 同一事件轮次直接在容器发空格，覆盖透明输入框还没接到焦点的边界。
+  await canvas.evaluate((element) => {
+    element.focus()
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }),
+    )
+  })
+  await expect(page.getByLabel('编辑节点文字', { exact: true })).toBeFocused()
+  await expect(page.getByLabel('编辑节点文字', { exact: true })).toHaveValue('我的第一个脑图')
+})
 test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('当前版本 v0.1.4', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('当前版本 v0.1.5', { exact: true })).toBeVisible()
   await root(page).click()
   await page.getByLabel('脑图画布', { exact: true }).press('Tab')
   await page.getByLabel('脑图画布', { exact: true }).focus()
@@ -1470,6 +1522,8 @@ for (const mode of ['单分支', '多分支', '纯文本', '面板按钮'] as co
     const targetId = (await node('挂接目标').getAttribute('data-node-id'))!,
       visibleBefore = await page.locator('.mind-node').count()
     await expect(expand).toBeVisible()
+    await page.getByRole('button', { name: '缩小', exact: true }).click()
+    const viewBefore = await canvas.locator('.graph > g').getAttribute('transform')
     if (mode === '面板按钮') {
       await page.evaluate((text) => {
         Object.defineProperty(navigator.clipboard, 'readText', {
@@ -1505,6 +1559,7 @@ for (const mode of ['单分支', '多分支', '纯文本', '面板按钮'] as co
     await expect(page.locator('.mind-node')).toHaveCount(visibleBefore)
     await expect(node('目标原有孩子')).toHaveCount(0)
     await expect(node('挂接目标')).toHaveClass(/selected/)
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', viewBefore!)
     await page.getByRole('button', { name: '撤销', exact: true }).click()
     await expect(expand).toBeVisible()
     await expect(page.locator('.mind-node')).toHaveCount(visibleBefore)
@@ -1513,6 +1568,7 @@ for (const mode of ['单分支', '多分支', '纯文本', '面板按钮'] as co
     await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
     await page.reload()
     await expect(expand).toBeVisible()
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', viewBefore!)
     await expect(page.locator('.mind-node')).toHaveCount(visibleBefore)
     await expand.click()
     await page.getByRole('button', { name: '适应画布', exact: true }).click()
@@ -1534,6 +1590,64 @@ for (const mode of ['单分支', '多分支', '纯文本', '面板按钮'] as co
         'true',
       )
     }
+  })
+}
+
+for (const multiple of [false, true]) {
+  test(`剪切${multiple ? '多个' : '单个'}分支到折叠节点，缩放和平移在粘贴、撤销重做及刷新后保持`, async ({
+    page,
+  }) => {
+    const { node } = await openBatchDragMap(page)
+    const canvas = page.getByLabel('脑图画布', { exact: true })
+    await node('分支甲').click()
+    if (multiple) await node('分支乙').click({ modifiers: ['Alt'] })
+    const clipboard = await canvas.evaluate((element) => {
+      const data = new DataTransfer()
+      element.dispatchEvent(
+        new ClipboardEvent('cut', { clipboardData: data, bubbles: true, cancelable: true }),
+      )
+      return Object.fromEntries(Array.from(data.types).map((type) => [type, data.getData(type)]))
+    })
+    await expect(node('分支甲')).toHaveCount(0)
+    if (multiple) await expect(node('分支乙')).toHaveCount(0)
+    await expect(page.getByText('已剪切分支', { exact: true })).toBeVisible()
+    await node('挂接目标').click()
+    const targetId = (await node('挂接目标').getAttribute('data-node-id'))!
+    await page.getByRole('button', { name: '缩小', exact: true }).click()
+    const box = (await canvas.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 100)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 45, box.y + 125, { steps: 5 })
+    await page.mouse.up()
+    // 平移空白画布不改变当前目标选择。
+    await node('挂接目标').click()
+    const view = (await canvas.locator('.graph > g').getAttribute('transform'))!
+    await canvas.evaluate((element, clipboard) => {
+      const data = new DataTransfer()
+      for (const [type, text] of Object.entries(clipboard)) data.setData(type, text)
+      element.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      )
+    }, clipboard)
+    await expect(page.getByText('已粘贴分支', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '展开 挂接目标', exact: true })).toBeVisible()
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', view)
+    await expect(node('分支甲')).toHaveCount(0)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', view)
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', view)
+    await page.reload()
+    await expect(page.getByRole('button', { name: '展开 挂接目标', exact: true })).toBeVisible()
+    await expect(canvas.locator('.graph > g')).toHaveAttribute('transform', view)
+    await page.getByRole('button', { name: '展开 挂接目标', exact: true }).click()
+    await page.getByRole('button', { name: '适应画布', exact: true }).click()
+    await expect(node('分支甲')).toHaveAttribute('data-parent-id', targetId)
+    if (multiple) await expect(node('分支乙')).toHaveAttribute('data-parent-id', targetId)
+    await expect(node('甲的孩子')).toBeVisible()
+    await expect(node('甲的孙节点')).toBeVisible()
+    await expect(node('目标原有孩子')).toBeVisible()
   })
 }
 

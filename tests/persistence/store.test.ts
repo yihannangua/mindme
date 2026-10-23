@@ -17,6 +17,73 @@ beforeEach(() => {
   vi.spyOn(LocalDatabase, 'open').mockImplementation(() => open.call(LocalDatabase, name))
 })
 describe('应用状态与保存确认', () => {
+  it('节点选中通知跟随内存发布，保存完成前可编辑，旧保存不会覆盖新文字', async () => {
+    const store = new AppStore()
+    await store.init()
+    const map = first(store.getSnapshot().snapshot!.space)
+    store.setActive(map.id)
+    const save = LocalDatabase.prototype.save
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(LocalDatabase.prototype, 'save').mockImplementationOnce(async function (snapshot) {
+      await blocked
+      return save.call(this, snapshot)
+    })
+    const applied = vi.fn()
+    const adding = store.command(
+      map.id,
+      { type: 'add', nodeId: map.rootId, kind: 'child' },
+      applied,
+    )
+    let committed: Promise<unknown> | undefined
+    try {
+      await vi.waitFor(() => expect(applied).toHaveBeenCalledTimes(1))
+      const id = applied.mock.calls[0][0] as string
+      expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[id].text).toBe('新主题')
+      expect(store.getSnapshot().status).toBe('saving')
+      committed = store.commitTextEdit(map.id, id, '无需等待落盘', '新主题')
+      expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[id].text).toBe('无需等待落盘')
+      release()
+      await Promise.all([adding, committed])
+      expect(applied).toHaveBeenCalledTimes(1)
+      expect(store.getSnapshot().status).toBe('saved')
+      await store.history(map.id, 'undo')
+      expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[id].text).toBe('新主题')
+      await store.history(map.id, 'undo')
+      expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[id]).toBeUndefined()
+      const reopened = new AppStore()
+      await reopened.init()
+      expect(reopened.getSnapshot().snapshot!.space.maps[map.id].nodes[id]).toBeUndefined()
+    } finally {
+      release()
+      await Promise.allSettled([adding, ...(committed ? [committed] : [])])
+    }
+  })
+  it('节点已发布后保存失败仍保留内容和待同步队列，选中通知不能冒充保存成功', async () => {
+    const store = new AppStore()
+    await store.init()
+    const map = first(store.getSnapshot().snapshot!.space)
+    store.setActive(map.id)
+    const queued = store.getSnapshot().snapshot!.outbox.length
+    vi.spyOn(LocalDatabase.prototype, 'save').mockRejectedValueOnce(new Error('磁盘忙'))
+    const applied = vi.fn()
+    await expect(
+      store.command(map.id, { type: 'add', nodeId: map.rootId, kind: 'child' }, applied),
+    ).rejects.toThrow('磁盘忙')
+    const id = applied.mock.calls[0][0] as string
+    expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[id].text).toBe('新主题')
+    expect(store.getSnapshot().snapshot!.outbox).toHaveLength(queued + 1)
+    expect(store.getSnapshot().status).toBe('error')
+    expect(store.hasUnpersisted).toBe(true)
+    await store.retrySave()
+    expect(store.getSnapshot().status).toBe('saved')
+    expect(applied).toHaveBeenCalledTimes(1)
+    const reopened = new AppStore()
+    await reopened.init()
+    expect(reopened.getSnapshot().snapshot!.space.maps[map.id].nodes[id].text).toBe('新主题')
+  })
   it('串行提交不会丢失连续编辑，撤销重做按脑图隔离', async () => {
     const store = new AppStore()
     await store.init()

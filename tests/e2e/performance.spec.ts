@@ -104,6 +104,53 @@ test('1001 节点导入、编辑、保存和缩放帧间隔实测', async ({ pag
       return intervals
     })
   const sorted = [...frameTimes].sort((a, b) => a - b)
+  const addPaintMs: number[] = [],
+    spaceEditMs: number[] = []
+  for (let i = 0; i < 5; i++) {
+    await page.getByRole('button', { name: '节点 基线文字 4', exact: true }).click()
+    const timings = await page.getByLabel('脑图画布', { exact: true }).evaluate(async (canvas) => {
+      const waitFrame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+      const started = performance.now()
+      canvas.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }),
+      )
+      let add: number | undefined
+      while (performance.now() - started < 5000) {
+        await waitFrame()
+        if (
+          canvas.querySelector('.mind-node.selected')?.getAttribute('aria-label') === '节点 新主题'
+        ) {
+          add = performance.now() - started
+          break
+        }
+      }
+      const spaceStarted = performance.now()
+      canvas.querySelector('textarea')?.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: ' ',
+          code: 'Space',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      let space: number | undefined
+      while (performance.now() - spaceStarted < 5000) {
+        await waitFrame()
+        if (canvas.querySelector('.inline-editor') === document.activeElement) {
+          space = performance.now() - spaceStarted
+          break
+        }
+      }
+      return { add, space }
+    })
+    expect(timings.add).toBeDefined()
+    expect(timings.space).toBeDefined()
+    addPaintMs.push(timings.add!)
+    spaceEditMs.push(timings.space!)
+    await page.getByLabel('编辑节点文字').fill(`快速新增 ${i}`)
+    await page.getByLabel('编辑节点文字').press('Enter')
+    await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+  }
   const result = {
     date: new Date().toISOString().slice(0, 10),
     browserName,
@@ -119,12 +166,15 @@ test('1001 节点导入、编辑、保存和缩放帧间隔实测', async ({ pag
     importMs,
     editPaintMs: editMs,
     localSaveMs: saveMs,
+    addSelectedPaintMs: addPaintMs,
+    spaceEditPaintMs: spaceEditMs,
     zoomFrameIntervalMs: {
       median: sorted[Math.floor(sorted.length / 2)],
       p95: sorted[Math.floor(sorted.length * 0.95)],
       maximum: sorted.at(-1),
     },
     editTargetPassed: editMs.every((ms) => ms <= 100),
+    inputTargetPassed: [...addPaintMs, ...spaceEditMs].every((ms) => ms <= 100),
     limitations:
       'Playwright 自动化引擎、开发服务器与合成事件；不能等同原生 Chrome/Safari、物理屏幕帧率或真实输入法验收。',
   }
@@ -140,9 +190,14 @@ test('1001 节点导入、编辑、保存和缩放帧间隔实测', async ({ pag
     console.warn(
       `性能目标结果：${result.editTargetPassed ? '通过' : '未达到'}（仅记录，不阻断 CI）`,
     )
-  else expect(editMs.every((ms) => ms <= 100)).toBe(true)
+  else {
+    expect(editMs.every((ms) => ms <= 100)).toBe(true)
+    expect(result.inputTargetPassed).toBe(true)
+  }
   expect(editMs).toHaveLength(5)
   expect(saveMs).toHaveLength(5)
+  expect(addPaintMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
+  expect(spaceEditMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
   expect(editMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
   expect(saveMs.every((ms) => ms >= 0 && ms < 5000)).toBe(true)
   expect(frameTimes).toHaveLength(60)
