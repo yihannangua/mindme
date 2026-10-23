@@ -36,6 +36,7 @@ import type { Command } from './domain/commands'
 import { createMap, uniqueName } from './domain/model'
 import { clone, MARKERS, type MarkerCategory, type Space } from './domain/types'
 import { editorState } from './persistence/editor-state'
+import { frequentMarkers, markerLabel, markerUsageStorage } from './persistence/marker-usage'
 import { restoreSelection, retainSelection, singleSelection } from './editor/selection'
 import { Workspace } from './workspace/Workspace'
 import {
@@ -92,6 +93,7 @@ export default function App() {
     ),
     [left, setLeft] = useState(true),
     [right, setRight] = useState(true)
+  const [markerUsage, setMarkerUsage] = useState(() => markerUsageStorage.load())
   const selectedId = selection.activeId
   const setSelectedId = useCallback((id: string | null) => setSelection(singleSelection(id)), [])
   const setActiveId = useCallback((id: string) => {
@@ -319,6 +321,23 @@ export default function App() {
     },
     [activeId, notify, selection.ids.length, selectedId, setSelectedId],
   )
+  const markerPressed = (category: MarkerCategory, value: string) =>
+    selection.ids.length > 0 &&
+    selection.ids.every((id) => map?.nodes[id]?.markers[category] === value)
+  const applyMarker = (category: MarkerCategory, value: string, returnToCanvas: boolean) => {
+    if (!node) return
+    const removing = markerPressed(category, value)
+    void guard(async () => {
+      await command(
+        selection.ids.length > 1
+          ? { type: 'marker-many', nodeIds: selection.ids, category, value }
+          : { type: 'marker', nodeId: node.id, category, value },
+      )
+      // 每次成功设置计一次，多选不按节点数放大；移除不计数。
+      if (!removing) setMarkerUsage(markerUsageStorage.record(category, value))
+      if (returnToCanvas) setFocusRequest((request) => request + 1)
+    })
+  }
   // 适应请求按分区独立递增，切换活动分区不改变其他画布收到的请求。
   const requestFit = useCallback((paneId: string) => {
     setFitRequests((current) => ({ ...current, [paneId]: (current[paneId] ?? 0) + 1 }))
@@ -675,6 +694,44 @@ export default function App() {
     window.addEventListener('keydown', onSave, true)
     return () => window.removeEventListener('keydown', onSave, true)
   }, [guard, notify])
+  useEffect(() => {
+    const onSidebarShortcut = (event: globalThis.KeyboardEvent) => {
+      if (
+        dialog ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.repeat ||
+        event.altKey ||
+        event.shiftKey ||
+        !(event.metaKey || event.ctrlKey)
+      )
+        return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.closest('input, select, [contenteditable]:not([contenteditable="false"])') ||
+          (target.closest('textarea') && !target.classList.contains('node-input-capture')))
+      )
+        return
+      const side =
+        event.key === '[' || event.code === 'BracketLeft'
+          ? 'left'
+          : event.key === ']' || event.code === 'BracketRight'
+            ? 'right'
+            : null
+      if (!side) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (side === 'left') setLeft((open) => !open)
+      else setRight((open) => !open)
+      // 关闭侧栏后让键盘可继续操作当前画布，保留选择与视角。
+      if (target instanceof HTMLElement && target.closest('aside'))
+        setFocusRequest((request) => request + 1)
+    }
+    window.addEventListener('keydown', onSidebarShortcut, true)
+    return () => window.removeEventListener('keydown', onSidebarShortcut, true)
+  }, [dialog])
   if (!state.snapshot)
     return (
       <main className="boot">
@@ -900,8 +957,9 @@ export default function App() {
           <div className="toolbar">
             <button
               aria-label={left ? '收起脑图列表' : '展开脑图列表'}
-              title="脑图列表"
-              onClick={() => setLeft(!left)}
+              title="脑图列表 ⌘["
+              aria-expanded={left}
+              onClick={() => setLeft((open) => !open)}
             >
               {left ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
@@ -949,6 +1007,25 @@ export default function App() {
             >
               <Redo2 size={15} />
             </button>
+            {markerUsage.length > 0 && (
+              <div className="frequent-markers" role="group" aria-label="常用图标">
+                <i aria-hidden="true" />
+                {frequentMarkers(markerUsage).map(({ category, value, count }) => (
+                  <button
+                    key={`${category}:${value}`}
+                    aria-label={`常用图标：${markerLabel(category, value)}`}
+                    title={`${markerLabel(category, value)} · 已使用 ${count} 次`}
+                    aria-pressed={markerPressed(category, value)}
+                    disabled={!node}
+                    onClick={(event) => applyMarker(category, value, event.detail > 0)}
+                  >
+                    <svg width="20" height="20">
+                      <MarkerIcon category={category} value={value} />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="toolbar-right">
               <button onClick={() => openDialog('import')}>导入</button>
               <button disabled={!map} onClick={() => openDialog('history')}>
@@ -961,7 +1038,9 @@ export default function App() {
               <i />
               <button
                 aria-label={right ? '收起节点面板' : '展开节点面板'}
-                onClick={() => setRight(!right)}
+                title="节点面板 ⌘]"
+                aria-expanded={right}
+                onClick={() => setRight((open) => !open)}
               >
                 {right ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
               </button>
@@ -1068,25 +1147,13 @@ export default function App() {
                       : '旗子'}
                 </span>
                 <div>
-                  {MARKERS[category].map((value, index) => (
+                  {MARKERS[category].map((value) => (
                     <button
                       key={value}
-                      aria-label={`${category === 'priority' ? '优先级' : category === 'progress' ? '进度' : '旗子'} ${category === 'progress' ? `${index}/8` : value}`}
-                      aria-pressed={
-                        selection.ids.length > 0 &&
-                        selection.ids.every((id) => map?.nodes[id]?.markers[category] === value)
-                      }
+                      aria-label={markerLabel(category, value)}
+                      aria-pressed={markerPressed(category, value)}
                       disabled={!node}
-                      onClick={(event) => {
-                        if (!node) return
-                        run(
-                          selection.ids.length > 1
-                            ? { type: 'marker-many', nodeIds: selection.ids, category, value }
-                            : { type: 'marker', nodeId: node.id, category, value },
-                        )
-                        // 鼠标点选后回到画布，键盘激活按钮时保留按钮焦点。
-                        if (event.detail > 0) setFocusRequest((request) => request + 1)
-                      }}
+                      onClick={(event) => applyMarker(category, value, event.detail > 0)}
                     >
                       <svg width="20" height="20">
                         <MarkerIcon category={category} value={value} />
@@ -1398,7 +1465,7 @@ export default function App() {
       {dialog === 'shortcuts' && (
         <Dialog title="macOS 快捷键" close={() => setDialog('')} wide>
           <p className="muted">
-            画布聚焦时使用。文字输入、中文输入法组合和系统文字剪贴板优先处理。
+            画布聚焦时使用；侧栏快捷键也可在工具栏操作。文字输入、中文输入法组合和系统文字剪贴板优先处理。
           </p>
           <div className="shortcuts">
             {shortcuts.map(([key, action]) => (
