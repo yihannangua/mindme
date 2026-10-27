@@ -281,6 +281,8 @@ export async function runReleaseRehearsal() {
     assert.equal(deployment.backup.quickCheck, 'ok')
     assert.equal(deployment.backup.restored, true)
     assert.equal(deployment.backup.compatible, true)
+    assert.equal(deployment.preSwitch.databaseVerified, true)
+    assert.equal(deployment.preSwitch.auth.authMode, 'passkey')
     assert.equal(
       Number(command('sudo', ['-n', 'stat', '-c', '%s', deployment.backup.path]).trim()),
       deployment.backup.size,

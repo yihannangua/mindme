@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   outputDir: 'test-results/editor',
   testDir: './tests/e2e',
-  testMatch: /(?:editor|performance|help)\.spec\.ts/,
+  testMatch: /(?:editor|performance|help|node-style)\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   timeout: 45000,

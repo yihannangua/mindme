@@ -7,7 +7,7 @@ export interface StorageSql {
 }
 import { diffSpace } from '../src/domain/operations'
 import { nameKey } from '../src/domain/model'
-import { equal, type MindMap } from '../src/domain/types'
+import { equal, type Change, type MindMap, type Space } from '../src/domain/types'
 import type { ServerState } from '../src/sync/protocol'
 
 const schema = `CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -40,6 +40,33 @@ export function initializeStorage(sql: StorageSql) {
 const meta = (map: MindMap) => {
   const { nodes: _nodes, history: _history, ...value } = map
   return value
+}
+export function compatibleEvents(before: Space, after: Space): Change[] {
+  const changes = diffSpace(before, after)
+  const styled = new Set(
+    changes
+      .filter(
+        (change) =>
+          change.nodeId && ['fontFamily', 'fontSize', 'backgroundColor'].includes(change.field),
+      )
+      .map((change) => `${change.mapId}/${change.nodeId}`),
+  )
+  const emitted = new Set<string>()
+  return changes.flatMap((change) => {
+    const key = `${change.mapId}/${change.nodeId ?? ''}`
+    if (!change.nodeId || !styled.has(key)) return [change]
+    if (emitted.has(key)) return []
+    emitted.add(key)
+    return [
+      {
+        mapId: change.mapId,
+        nodeId: change.nodeId,
+        field: '$node',
+        before: before.maps[change.mapId].nodes[change.nodeId],
+        after: after.maps[change.mapId].nodes[change.nodeId],
+      },
+    ]
+  })
 }
 function jobs(state: ServerState) {
   const result: Record<string, number> = {}
@@ -175,7 +202,7 @@ export function persistState(
       'INSERT INTO events(seq,at,data) VALUES(?,?,?)',
       after.seq,
       now,
-      JSON.stringify(diffSpace(before.space, after.space)),
+      JSON.stringify(compatibleEvents(before.space, after.space)),
     )
     sql.exec('DELETE FROM events WHERE seq < ?', Math.max(0, after.seq - 1000))
   }

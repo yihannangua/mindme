@@ -42,7 +42,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url),
     path = url.pathname
   if (path === '/api/health' && request.method === 'GET')
-    return json({ ok: true, version: APP_VERSION, schemaVersion: 1 })
+    return json({
+      ok: true,
+      version: APP_VERSION,
+      schemaVersion: 1,
+      capabilities: { nodeStyleFields: true },
+    })
   if (!path.startsWith('/auth/') && !path.startsWith('/api/')) return env.ASSETS.fetch(request)
   if (path === '/api/migration/export') {
     if (request.method !== 'POST' || !migrationAuthorized(request, env))

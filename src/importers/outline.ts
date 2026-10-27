@@ -1,10 +1,13 @@
-import { assert, LIMITS, type Markers } from '../domain/types'
+import { assert, LIMITS, type Markers, type NodeFont } from '../domain/types'
 export interface DraftNode {
   id: string
   parentId: string | null
   text: string
   markers: Markers
   collapsed?: boolean
+  fontFamily?: NodeFont | null
+  fontSize?: number | null
+  backgroundColor?: string | null
 }
 export interface ImportDraft {
   title: string

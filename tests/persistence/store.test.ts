@@ -17,6 +17,81 @@ beforeEach(() => {
   vi.spyOn(LocalDatabase, 'open').mockImplementation(() => open.call(LocalDatabase, name))
 })
 describe('应用状态与保存确认', () => {
+  it('服务端拒绝样式操作后变更操作 ID，确认响应时仍保留样式和待同步操作', async () => {
+    const store = new AppStore()
+    await store.init()
+    const before = structuredClone(store.getSnapshot().snapshot!.space),
+      map = first(before)
+    store.setActive(map.id)
+    await store.command(map.id, {
+      type: 'style-many',
+      nodeIds: [map.rootId],
+      style: { fontSize: 28 },
+    })
+    const oldId = store.getSnapshot().snapshot!.outbox.at(-1)!.opId
+    await store.outboxState([oldId], 'sending')
+    await store.rekeyRejected([oldId])
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: before,
+        seq: 1,
+        results: [{ opId: oldId, status: 'rejected', seq: 1 }],
+        serverTime: 2000,
+        subject: 'subject',
+      },
+      [oldId],
+    )
+    const snapshot = store.getSnapshot().snapshot!
+    expect(
+      snapshot.outbox.some(
+        (op) =>
+          op.opId !== oldId &&
+          op.state === 'retry' &&
+          op.changes.some((change) => change.field === 'fontSize'),
+      ),
+    ).toBe(true)
+    expect(snapshot.space.maps[map.id].nodes[map.rootId].fontSize).toBe(28)
+    expect(snapshot.drafts).toHaveLength(0)
+    const reopened = new AppStore()
+    await reopened.init()
+    expect(
+      reopened
+        .getSnapshot()
+        .snapshot!.outbox.some(
+          (op) => op.state === 'retry' && op.changes.some((change) => change.field === 'fontSize'),
+        ),
+    ).toBe(true)
+  })
+  it('节点样式批量设置可撤销重做，重启后保留并进入待同步队列', async () => {
+    const store = new AppStore()
+    await store.init()
+    const map = first(store.getSnapshot().snapshot!.space)
+    store.setActive(map.id)
+    const ids = Object.keys(map.nodes).slice(1, 3)
+    await store.command(map.id, {
+      type: 'style-many',
+      nodeIds: ids,
+      style: { fontSize: 32, backgroundColor: '#123456', fontFamily: 'mono' },
+    })
+    expect(
+      store
+        .getSnapshot()
+        .snapshot!.outbox.at(-1)
+        ?.changes.some((change) => change.field === 'fontSize'),
+    ).toBe(true)
+    await store.history(map.id, 'undo')
+    expect(store.getSnapshot().snapshot!.space.maps[map.id].nodes[ids[0]].fontSize).toBeNull()
+    await store.history(map.id, 'redo')
+    const reopened = new AppStore()
+    await reopened.init()
+    for (const id of ids)
+      expect(reopened.getSnapshot().snapshot!.space.maps[map.id].nodes[id]).toMatchObject({
+        fontSize: 32,
+        backgroundColor: '#123456',
+        fontFamily: 'mono',
+      })
+  })
   it('节点选中通知跟随内存发布，保存完成前可编辑，旧保存不会覆盖新文字', async () => {
     const store = new AppStore()
     await store.init()

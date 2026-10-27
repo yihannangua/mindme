@@ -502,6 +502,18 @@ export class AppStore {
       await this.persist(snapshot)
     })
   }
+  rekeyRejected(ids: string[]) {
+    return this.serial(async () => {
+      const snapshot = clone(this.view.snapshot)
+      assert(snapshot, '本地数据尚未就绪')
+      for (const op of snapshot.outbox)
+        if (ids.includes(op.opId) && op.state === 'sending') {
+          op.opId = uuid()
+          op.state = 'retry'
+        }
+      await this.persist(snapshot)
+    })
+  }
   discardDraft(id: string) {
     return this.serial(async () => {
       const snapshot = clone(this.view.snapshot)

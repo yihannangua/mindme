@@ -35,6 +35,7 @@ export function pointerSelection(
   target: string,
   mode: 'single' | 'range' | 'toggle',
   visibleOrder: string[],
+  parents: Record<string, string | null>,
 ): NodeSelection {
   if (mode === 'single') return singleSelection(target)
   if (mode === 'toggle') {
@@ -46,13 +47,21 @@ export function pointerSelection(
       anchorId: current.anchorId === target ? null : current.anchorId,
     })
   }
-  const anchor = current.anchorId ?? current.activeId,
-    start = anchor ? visibleOrder.indexOf(anchor) : -1,
-    end = visibleOrder.indexOf(target)
+  const anchor = current.anchorId ?? current.activeId
+  if (
+    !anchor ||
+    !Object.hasOwn(parents, anchor) ||
+    !Object.hasOwn(parents, target) ||
+    parents[anchor] !== parents[target]
+  )
+    return singleSelection(target)
+  const siblings = visibleOrder.filter((id) => parents[id] === parents[target]),
+    start = anchor ? siblings.indexOf(anchor) : -1,
+    end = siblings.indexOf(target)
   if (start < 0 || end < 0) return singleSelection(target)
-  // 按可见布局的层级顺序取闭区间；连续 Shift 选择始终保留最初起点。
+  // 只在同一父节点的可见子节点中取闭区间，连续选择保留起点。
   return {
-    ids: visibleOrder.slice(Math.min(start, end), Math.max(start, end) + 1),
+    ids: siblings.slice(Math.min(start, end), Math.max(start, end) + 1),
     activeId: target,
     anchorId: anchor,
   }

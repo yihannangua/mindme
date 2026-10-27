@@ -1,7 +1,15 @@
 import { selectedForest } from './branches'
 import { balanceMap } from '../layout/balance'
 import { assertName, children, makeNode, subtree, validateSpace } from './model'
-import { assert, clone, MARKERS, type Context, type MarkerCategory, type Space } from './types'
+import {
+  assert,
+  clone,
+  MARKERS,
+  type Context,
+  type MarkerCategory,
+  type NodeFont,
+  type Space,
+} from './types'
 
 export type Command =
   | { type: 'add'; nodeId: string; kind: 'child' | 'sibling' | 'parent'; text?: string }
@@ -15,6 +23,15 @@ export type Command =
   | { type: 'fold'; nodeId: string; recursive?: boolean; value?: boolean }
   | { type: 'marker'; nodeId: string; category: MarkerCategory; value: string }
   | { type: 'marker-many'; nodeIds: string[]; category: MarkerCategory; value: string }
+  | {
+      type: 'style-many'
+      nodeIds: string[]
+      style: {
+        fontFamily?: NodeFont | null
+        fontSize?: number | null
+        backgroundColor?: string | null
+      }
+    }
   | { type: 'layout' }
   | { type: 'trash' }
   | { type: 'untrash' }
@@ -167,6 +184,18 @@ export function execute(
         if (remove) delete map.nodes[id].markers[command.category]
         else map.nodes[id].markers[command.category] = command.value
       }
+      break
+    }
+    case 'style-many': {
+      const ids = [...new Set(command.nodeIds)]
+      assert(ids.length > 0 && ids.every((id) => !!map.nodes[id]), '请选择有效节点')
+      assert(
+        Object.keys(command.style).every((key) =>
+          ['fontFamily', 'fontSize', 'backgroundColor'].includes(key),
+        ),
+        '节点样式不合法',
+      )
+      for (const id of ids) Object.assign(map.nodes[id], command.style)
       break
     }
     case 'layout':

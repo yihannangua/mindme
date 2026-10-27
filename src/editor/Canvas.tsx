@@ -22,6 +22,7 @@ import { nextDirectionalNode, type Direction } from './navigation'
 import { editorState, type CanvasView } from '../persistence/editor-state'
 import type { CanvasStyle } from './style'
 import { pointerSelection, retainSelection, type NodeSelection } from './selection'
+import { backgroundTextColor, nodeFont } from './node-style'
 
 interface Props {
   map: MindMap
@@ -126,12 +127,11 @@ export function Canvas({
   const measureText = useMemo<TextMeasure | undefined>(() => {
     const context = document.createElement('canvas').getContext('2d')
     if (!context) return
-    const family = getComputedStyle(document.documentElement).fontFamily,
-      widths = new Map<string, number>()
+    const widths = new Map<string, number>()
     return (text, node) => {
       const weight = node.parentId === null ? 600 : 400,
-        fontSize = canvasStyle === 'compact' ? (node.parentId === null ? 16 : 11) : 14,
-        key = `${weight}:${fontSize}:${text}`
+        { family, size: fontSize } = nodeFont(node, canvasStyle),
+        key = `${family}:${weight}:${fontSize}:${text}`
       let width = widths.get(key)
       if (width === undefined) {
         context.font = `${weight} ${fontSize}px ${family}`
@@ -491,6 +491,7 @@ export function Canvas({
             id,
             event.altKey ? 'toggle' : 'range',
             layout.nodes.map((item) => item.node.id),
+            Object.fromEntries(layout.nodes.map((item) => [item.node.id, item.node.parentId])),
           ),
         )
         drag.current = null
@@ -679,6 +680,7 @@ export function Canvas({
                 canvasStyle === 'compact' && !markerCount && root
                   ? (width - textWidth) / 2
                   : textLeft
+            const font = nodeFont(node, canvasStyle)
             return (
               <g
                 key={node.id}
@@ -700,11 +702,12 @@ export function Canvas({
                   width={width}
                   height={height}
                   rx={root ? 10 : 7}
-                  style={
-                    root
-                      ? undefined
-                      : { stroke: selectedIds.has(node.id) ? '#4b88b3' : `${item.color}99` }
-                  }
+                  style={{
+                    ...(node.backgroundColor ? { fill: node.backgroundColor } : {}),
+                    ...(!root
+                      ? { stroke: selectedIds.has(node.id) ? '#4b88b3' : `${item.color}99` }
+                      : {}),
+                  }}
                 />
                 {Object.entries(node.markers).map(([category, value], i) => (
                   <MarkerIcon
@@ -718,6 +721,13 @@ export function Canvas({
                 {!editing && (
                   <text
                     className="node-label"
+                    style={{
+                      fontFamily: font.family,
+                      fontSize: font.size,
+                      ...(node.backgroundColor
+                        ? { fill: backgroundTextColor(node.backgroundColor) }
+                        : {}),
+                    }}
                     textAnchor={
                       canvasStyle === 'compact' && !markerCount && root ? 'middle' : 'start'
                     }
@@ -746,6 +756,11 @@ export function Canvas({
                     <textarea
                       ref={captureInput}
                       className={editing ? 'inline-editor' : 'node-input-capture'}
+                      style={{
+                        fontFamily: font.family,
+                        fontSize: font.size,
+                        lineHeight: `${lineHeight}px`,
+                      }}
                       aria-label={editing ? '编辑节点文字' : '输入所选节点文字'}
                       spellCheck={false}
                       value={editing ? edit.text : ''}

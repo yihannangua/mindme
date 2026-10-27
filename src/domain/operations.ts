@@ -2,7 +2,17 @@ import { validateSpace } from './model'
 import { assert, clone, equal, own, type Change, type HistoryChange, type Space } from './types'
 
 const mapFields = ['title', 'deletedAt', 'historyDirtySince'] as const
-const nodeFields = ['parentId', 'order', 'text', 'collapsed', 'position', 'side'] as const
+const nodeFields = [
+  'parentId',
+  'order',
+  'text',
+  'collapsed',
+  'position',
+  'side',
+  'fontFamily',
+  'fontSize',
+  'backgroundColor',
+] as const
 export function diffSpace(before: Space, after: Space): Change[] {
   const changes: Change[] = []
   const add = (change: Change) => {
@@ -33,7 +43,7 @@ export function diffSpace(before: Space, after: Space): Change[] {
         continue
       }
       for (const field of nodeFields)
-        add({ mapId, nodeId, field, before: an[field], after: bn[field] })
+        add({ mapId, nodeId, field, before: an[field] ?? null, after: bn[field] ?? null })
       for (const category of ['priority', 'progress', 'flag'] as const)
         add({
           mapId,
