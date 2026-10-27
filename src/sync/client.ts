@@ -26,6 +26,9 @@ export const ACCOUNT_MISMATCH_DETAIL =
   '此浏览器的本地空间与当前账号不匹配，已暂停同步。若刚切换过账号或点过重试，仅凭此提示无法确认待同步操作是否已到达云端；请勿继续重试或清除原浏览器配置。先导出本地可用脑图备份并保留原配置。'
 const syncTimeoutDetail = '云端响应超时，修改已保留在本机；请稍后重试。'
 const syncTimeoutMs = 30000
+const styleFields = new Set(['fontFamily', 'fontSize', 'backgroundColor'])
+const hasStyleChanges = (op: { changes: { field: string }[] }) =>
+  op.changes.some((change) => styleFields.has(change.field))
 const errorDetail = (error: unknown) =>
   error instanceof DOMException && error.name === 'TimeoutError'
     ? syncTimeoutDetail
@@ -299,6 +302,23 @@ export class SyncClient {
         batch.push(op)
         bytes += size
       }
+      if (batch.some(hasStyleChanges)) {
+        const health = await fetch('/api/health', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!health.ok) throw new Error('无法确认服务器版本，节点样式仍保存在本机，暂不提交。')
+        const status = (await health.json()) as { capabilities?: { nodeStyleFields?: boolean } }
+        if (status.capabilities?.nodeStyleFields !== true) {
+          delay = 15000
+          this.retryRequested = false
+          this.notify(
+            'error',
+            '服务器版本不支持节点样式，修改保留在本机，升级服务器后将重试；请勿清除站点数据。',
+          )
+          return
+        }
+      }
       sentIds = batch.map((op) => op.opId)
       if (sentIds.length) await this.store.outboxState(sentIds, 'sending')
       if (batch.length) this.notify('pending')
@@ -353,6 +373,25 @@ export class SyncClient {
         this.serverIdentityMismatchPaused = true
         if (sentIds.length) await this.store.outboxState(sentIds, 'retry')
         this.notify('account-mismatch', ACCOUNT_MISMATCH_DETAIL)
+        return
+      }
+      const rejectedStyleIds = batch
+        .filter(
+          (op) =>
+            hasStyleChanges(op) &&
+            result.results.some((item) => item.opId === op.opId && item.status === 'rejected'),
+        )
+        .map((op) => op.opId)
+      if (rejectedStyleIds.length) {
+        // 旧服务端可能在能力检查后接管请求，并永久记住拒绝的 opId；新 ID 才能安全重试。
+        await this.store.rekeyRejected(rejectedStyleIds)
+        await this.store.acknowledge(result, sentIds)
+        this.retryRequested = false
+        delay = 15000
+        this.notify(
+          'error',
+          '服务器拒绝节点样式修改，原内容和待同步队列已保留，请确认服务器版本后重试。',
+        )
         return
       }
       this.store.calibrate(result.serverTime, start, Date.now())

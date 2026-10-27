@@ -3,7 +3,7 @@ import { SyncClient } from '../../src/sync/client'
 import type { AppStore } from '../../src/app/store'
 import type { Operation } from '../../src/domain/types'
 import { emptySpace } from '../../src/domain/types'
-import { operation, seed } from '../helpers'
+import { edit, first, operation, seed } from '../helpers'
 class SocketStub {
   readyState = 1
   onmessage = null
@@ -40,6 +40,13 @@ function fixture() {
     outboxState: vi.fn(async (ids: string[], status: Operation['state']) => {
       for (const item of state.outbox) if (ids.includes(item.opId)) item.state = status
     }),
+    rekeyRejected: vi.fn(async (ids: string[]) => {
+      for (const item of state.outbox)
+        if (ids.includes(item.opId)) {
+          item.opId = '重新排队的操作'
+          item.state = 'retry'
+        }
+    }),
     acknowledge: vi.fn(async () => {
       state.outbox = []
     }),
@@ -56,6 +63,65 @@ function fixture() {
   return { client, store, state, notify }
 }
 describe('同步客户端错误与重试', () => {
+  it('旧服务端不支持样式字段时保留队列，不发送同步请求', async () => {
+    const { client, state, store, notify } = fixture()
+    const before = seed(),
+      map = first(before)
+    const after = edit(before, {
+      type: 'style-many',
+      nodeIds: [map.rootId],
+      style: { fontSize: 28 },
+    })
+    state.outbox = [operation(before, after)]
+    const fetch = vi.fn(async () => Response.json({ ok: true, version: '0.1.6' }))
+    vi.stubGlobal('fetch', fetch)
+    client.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(fetch.mock.calls[0][0]).toBe('/api/health')
+    expect(store.outboxState).not.toHaveBeenCalled()
+    expect(store.acknowledge).not.toHaveBeenCalled()
+    expect(state.outbox[0].state).toBe('pending')
+    expect(notify).toHaveBeenLastCalledWith('error', expect.stringContaining('修改保留在本机'))
+    client.stop()
+  })
+  it('能力检查后服务回滚并拒绝样式时，重置操作 ID 并保留待同步内容', async () => {
+    const { client, state, store, notify } = fixture()
+    const before = seed(),
+      map = first(before)
+    const after = edit(before, {
+      type: 'style-many',
+      nodeIds: [map.rootId],
+      style: { fontSize: 28 },
+    })
+    state.space = after
+    const op = operation(before, after)
+    const oldId = op.opId
+    state.outbox = [op]
+    store.acknowledge.mockImplementation(async () => undefined)
+    const fetch = vi.fn(async (url: string) =>
+      url === '/api/health'
+        ? Response.json({ capabilities: { nodeStyleFields: true } })
+        : Response.json({
+            schemaVersion: 1,
+            seq: 1,
+            space: before,
+            results: [{ opId: oldId, status: 'rejected', seq: 1 }],
+            serverTime: Date.now(),
+            subject: 'subject',
+          }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    client.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.rekeyRejected).toHaveBeenCalledWith([oldId])
+    expect(store.acknowledge).toHaveBeenCalledOnce()
+    expect(state.outbox[0].opId).toBe('重新排队的操作')
+    expect(state.outbox[0].state).toBe('retry')
+    expect(first(state.space).nodes[map.rootId].fontSize).toBe(28)
+    expect(notify).toHaveBeenLastCalledWith('error', expect.stringContaining('待同步队列已保留'))
+    client.stop()
+  })
   it('先持久化提交中状态，确认后才移除队列并显示已同步', async () => {
     const { client, store, notify } = fixture()
     vi.stubGlobal(

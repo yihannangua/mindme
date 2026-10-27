@@ -6,6 +6,7 @@ import { makeNode } from '../../src/domain/model'
 import { mergeOperation, newServerState, type ServerState } from '../../src/sync/protocol'
 import { emptySpace } from '../../src/domain/types'
 import { edit, first, operation, seed } from '../helpers'
+import { applyChanges } from '../../src/domain/operations'
 function database() {
   const db = new DatabaseSync(':memory:'),
     queries: string[] = []
@@ -50,6 +51,34 @@ function bigState() {
   return mergeOperation(newServerState(), operation(emptySpace(), space), 10000).state
 }
 describe('SQLite 写入额度与增量持久化', () => {
+  it('样式事件写为旧版可读取的节点快照，同次文字与标记不丢失', () => {
+    const { db, sql } = database()
+    initializeStorage(sql)
+    const before = mergeOperation(newServerState(), operation(emptySpace(), seed()), 10000).state
+    persistState(sql, newServerState(), before, 10000)
+    const next = structuredClone(before)
+    const map = first(next.space),
+      node = map.nodes[map.rootId]
+    node.fontSize = 24
+    node.backgroundColor = '#123456'
+    node.text = '新标题'
+    node.markers.flag = 'blue'
+    map.title = node.text
+    next.seq++
+    persistState(sql, before, next, 11000)
+    const events = readDelta(sql, before.seq, next.seq)!
+    const nodeEvents = events.filter((event) => event.nodeId === node.id)
+    expect(nodeEvents).toHaveLength(1)
+    expect(nodeEvents[0].field).toBe('$node')
+    expect(nodeEvents[0].after).toMatchObject({
+      text: '新标题',
+      fontSize: 24,
+      backgroundColor: '#123456',
+      markers: { flag: 'blue' },
+    })
+    expect(applyChanges(before.space, events, 11000).maps[map.id].nodes[node.id]).toEqual(node)
+    db.close()
+  })
   it('已有数据库冷启动在禁止写入时仍能通过版本查询，不执行任何 DDL', () => {
     const { db, sql, queries, changes, block } = database()
     initializeStorage(sql)

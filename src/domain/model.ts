@@ -4,6 +4,7 @@ import {
   emptySpace,
   LIMITS,
   MARKERS,
+  NODE_FONTS,
   own,
   safeId,
   type Context,
@@ -83,6 +84,16 @@ export function validateMap(map: MapContent) {
         [-1, 0, 1].includes(node.side) &&
         Number.isFinite(node.order),
       '节点属性不合法',
+    )
+    assert(node.fontFamily == null || NODE_FONTS.includes(node.fontFamily), '节点字体不合法')
+    assert(
+      node.fontSize == null ||
+        (Number.isInteger(node.fontSize) && node.fontSize >= 10 && node.fontSize <= 48),
+      '节点字号须为 10 至 48',
+    )
+    assert(
+      node.backgroundColor == null || /^#[0-9a-fA-F]{6}$/.test(node.backgroundColor),
+      '节点背景色不合法',
     )
     assert(
       node.position === null ||

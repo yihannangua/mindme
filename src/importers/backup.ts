@@ -161,6 +161,9 @@ export function importDrafts(
         ...makeNode(id, parentId, parentId === null ? map.title : original.text, offset + index),
         markers: clone(original.markers),
         collapsed: !!original.collapsed,
+        ...(original.fontFamily != null && { fontFamily: original.fontFamily }),
+        ...(original.fontSize != null && { fontSize: original.fontSize }),
+        ...(original.backgroundColor != null && { backgroundColor: original.backgroundColor }),
       }
       node.side = index % 4 < 2 ? 1 : -1
       map.nodes[id] = node
@@ -181,6 +184,9 @@ export function copyBranch(map: MindMap, nodeId: string): ImportDraft {
       text: node.text,
       markers: clone(node.markers),
       collapsed: node.collapsed,
+      fontFamily: node.fontFamily,
+      fontSize: node.fontSize,
+      backgroundColor: node.backgroundColor,
     })
     for (const child of children(map, id)) visit(child.id, id)
   }

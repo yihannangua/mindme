@@ -35,7 +35,7 @@ import {
 import { appStore, context, message } from './app/store'
 import type { Command } from './domain/commands'
 import { createMap, uniqueName } from './domain/model'
-import { clone, MARKERS, type MarkerCategory, type Space } from './domain/types'
+import { clone, MARKERS, type MarkerCategory, type NodeFont, type Space } from './domain/types'
 import { editorState } from './persistence/editor-state'
 import { frequentMarkers, markerLabel, markerUsageStorage } from './persistence/marker-usage'
 import { restoreSelection, retainSelection, singleSelection } from './editor/selection'
@@ -309,7 +309,9 @@ export default function App() {
     async (command: Command) => {
       if (
         selection.ids.length > 1 &&
-        !['delete-many', 'fold', 'layout', 'reparent-many', 'marker-many'].includes(command.type)
+        !['delete-many', 'fold', 'layout', 'reparent-many', 'marker-many', 'style-many'].includes(
+          command.type,
+        )
       )
         setSelectedId(selectedId)
       try {
@@ -1092,7 +1094,7 @@ export default function App() {
           </div>
           {selection.ids.length > 1 && (
             <p className="muted small selection-note">
-              可拖动任一已选节点整批挂接。下方显示当前节点，编辑和新增会收为当前节点；图标对全部所选节点生效；复制、剪切、删除对全部所选分支生效。
+              可拖动任一已选节点整批挂接。编辑和新增会收为当前节点；样式和图标对全部所选节点生效；复制、剪切、删除对全部所选分支生效。
             </p>
           )}
           <section>
@@ -1141,6 +1143,128 @@ export default function App() {
                   ? '删除所选分支时包含各自子分支，可撤销。'
                   : '删除节点时包含整个子分支，可撤销。'}
             </p>
+          </section>
+          <section className="node-style-controls" aria-label="节点样式">
+            <h3>节点样式</h3>
+            <label className="field-label" htmlFor="node-font-family">
+              字体
+            </label>
+            <select
+              id="node-font-family"
+              disabled={!node}
+              value={
+                selection.ids.length &&
+                selection.ids.every(
+                  (id) => (map?.nodes[id]?.fontFamily ?? null) === (node?.fontFamily ?? null),
+                )
+                  ? (node?.fontFamily ?? '')
+                  : 'mixed'
+              }
+              onChange={(event) =>
+                run({
+                  type: 'style-many',
+                  nodeIds: selection.ids,
+                  style: { fontFamily: (event.target.value || null) as NodeFont | null },
+                })
+              }
+            >
+              <option value="mixed" disabled>
+                多种字体
+              </option>
+              <option value="">默认字体</option>
+              <option value="sans">无衬线</option>
+              <option value="serif">衬线</option>
+              <option value="mono">等宽</option>
+            </select>
+            <label className="field-label" htmlFor="node-font-size">
+              字号
+            </label>
+            <select
+              id="node-font-size"
+              disabled={!node}
+              value={
+                selection.ids.length &&
+                selection.ids.every(
+                  (id) => (map?.nodes[id]?.fontSize ?? null) === (node?.fontSize ?? null),
+                )
+                  ? (node?.fontSize ?? '')
+                  : 'mixed'
+              }
+              onChange={(event) =>
+                run({
+                  type: 'style-many',
+                  nodeIds: selection.ids,
+                  style: { fontSize: event.target.value ? Number(event.target.value) : null },
+                })
+              }
+            >
+              <option value="mixed" disabled>
+                多种字号
+              </option>
+              <option value="">默认字号</option>
+              {Array.from({ length: 39 }, (_, i) => i + 10).map((size) => (
+                <option key={size} value={size}>
+                  {size} px
+                </option>
+              ))}
+            </select>
+            <span className="field-label">背景色</span>
+            <div className="node-color-controls" role="group" aria-label="节点背景色">
+              {['#ffffff', '#fff0e8', '#fff6cb', '#e3f4e9', '#e3f1fb', '#f1e7f8', '#273b48'].map(
+                (color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className="node-color-swatch"
+                    aria-label={`背景色 ${color}`}
+                    title={`背景色 ${color}`}
+                    aria-pressed={
+                      selection.ids.length > 0 &&
+                      selection.ids.every(
+                        (id) => map?.nodes[id]?.backgroundColor?.toLowerCase() === color,
+                      )
+                    }
+                    disabled={!node}
+                    style={{ backgroundColor: color }}
+                    onClick={() =>
+                      run({
+                        type: 'style-many',
+                        nodeIds: selection.ids,
+                        style: { backgroundColor: color },
+                      })
+                    }
+                  />
+                ),
+              )}
+              <label className="node-color-custom" title="自定义背景色">
+                <input
+                  type="color"
+                  aria-label="自定义背景色"
+                  disabled={!node}
+                  value={node?.backgroundColor ?? '#ffffff'}
+                  onChange={(event) =>
+                    run({
+                      type: 'style-many',
+                      nodeIds: selection.ids,
+                      style: { backgroundColor: event.target.value },
+                    })
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!node}
+                onClick={() =>
+                  run({
+                    type: 'style-many',
+                    nodeIds: selection.ids,
+                    style: { backgroundColor: null },
+                  })
+                }
+              >
+                恢复默认
+              </button>
+            </div>
           </section>
           <section>
             <h3>

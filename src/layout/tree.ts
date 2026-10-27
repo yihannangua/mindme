@@ -1,5 +1,6 @@
 import type { MapContent, MindNode } from '../domain/types'
 import type { CanvasStyle } from '../editor/style'
+import { nodeFont } from '../editor/node-style'
 export interface LayoutNode {
   node: MindNode
   x: number
@@ -41,7 +42,8 @@ export function measureNode(
 ) {
   const compact = style === 'compact',
     maxTextWidth = compact ? 360 : 440,
-    lineHeight = compact ? 15 : 21,
+    lineHeight =
+      node.fontSize == null ? (compact ? 15 : 21) : Math.ceil(nodeFont(node, style).size * 1.5),
     horizontalPadding = compact ? 18 : 32,
     verticalPadding = compact ? 6 : 20,
     minWidth = compact ? 28 : 44,
@@ -52,7 +54,9 @@ export function measureNode(
     let line = '',
       width = 0
     for (const { segment } of segmenter.segment(paragraph)) {
-      const size = measureText ? measureText(segment, node) : glyphWidth(segment)
+      const size = measureText
+        ? measureText(segment, node)
+        : glyphWidth(segment) * (nodeFont(node, style).size / 14)
       if (width + size > maxTextWidth && line) {
         lines.push(line)
         widths.push(width)

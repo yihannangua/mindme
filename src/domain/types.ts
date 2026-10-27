@@ -13,6 +13,8 @@ export const MARKERS = {
 } as const
 export type MarkerCategory = keyof typeof MARKERS
 export type Markers = Partial<Record<MarkerCategory, string>>
+export const NODE_FONTS = ['sans', 'serif', 'mono'] as const
+export type NodeFont = (typeof NODE_FONTS)[number]
 export interface MindNode {
   id: string
   parentId: string | null
@@ -22,6 +24,9 @@ export interface MindNode {
   markers: Markers
   position: { x: number; y: number } | null
   side: -1 | 0 | 1
+  fontFamily?: NodeFont | null
+  fontSize?: number | null
+  backgroundColor?: string | null
 }
 export interface MapContent {
   id: string

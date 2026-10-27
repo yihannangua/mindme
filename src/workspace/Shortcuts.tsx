@@ -18,7 +18,7 @@ export const shortcutGroups = [
     title: '选择与导航',
     shortcuts: [
       { key: '↑ / ↓ / ← / →', action: '按方向选择可见节点' },
-      { key: 'Shift + 单击', action: '选择起点到当前节点的可见范围' },
+      { key: 'Shift + 单击', action: '选择同一父节点下的同级范围' },
       { key: '⌥ + 单击', action: '加入或移除节点选择' },
       { key: 'Esc', action: '未编辑时取消节点选择；拖动时取消拖动' },
     ],

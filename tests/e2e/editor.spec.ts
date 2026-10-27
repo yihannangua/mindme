@@ -60,7 +60,7 @@ test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('当前版本 v0.1.6', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('当前版本 v0.1.7', { exact: true })).toBeVisible()
   await root(page).click()
   await page.getByLabel('脑图画布', { exact: true }).press('Tab')
   await page.getByLabel('脑图画布', { exact: true }).focus()
@@ -672,7 +672,7 @@ test('Alt 单击增减不连续选择，可取消全部且不会误入编辑或�
   await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeDisabled()
 })
 
-test('Shift 多选仅包括展开的节点，展开分支后范围自动包含子节点', async ({ page }) => {
+test('Shift 多选仅包含同级节点，展开子节点不会进入范围，跨父节点退回单选', async ({ page }) => {
   await page.goto('/')
   const a = page.getByRole('button', { name: '节点 想要探索的事', exact: true }),
     b = page.getByRole('button', { name: '节点 下一步行动', exact: true }),
@@ -682,13 +682,16 @@ test('Shift 多选仅包括展开的节点，展开分支后范围自动包含�
   await expect(child).toBeVisible()
   await page.getByRole('button', { name: '折叠 想要探索的事', exact: true }).click()
   await expect(child).toHaveCount(0)
-  await root(page).click()
+  await a.click()
   await b.click({ modifiers: ['Shift'] })
-  await expect(page.locator('.mind-node.selected')).toHaveCount(3)
+  await expect(page.locator('.mind-node.selected')).toHaveCount(2)
   await page.getByRole('button', { name: '展开 想要探索的事', exact: true }).click()
   await expect(child).toBeVisible()
   await b.click({ modifiers: ['Shift'] })
-  await expect(page.locator('.mind-node.selected')).toHaveCount(4)
+  await expect(page.locator('.mind-node.selected')).toHaveCount(2)
+  await expect(child).not.toHaveClass(/selected/)
+  await child.click({ modifiers: ['Shift'] })
+  await expect(page.locator('.mind-node.selected')).toHaveCount(1)
   await expect(child).toHaveClass(/selected/)
 })
 
@@ -1069,11 +1072,13 @@ for (const batch of [false, true]) {
   })
 }
 
-test('Shift 父子同时多选时整批挂接仅移动外层分支，不拆散子树', async ({ page }) => {
+test('Alt 父子同时多选时整批挂接仅移动外层分支，不拆散子树', async ({ page }) => {
   const { node, startDrag } = await openBatchDragMap(page)
   await page.getByRole('button', { name: '展开 挂接目标', exact: true }).click()
   await node('分支甲').click()
-  await node('分支乙').click({ modifiers: ['Shift'] })
+  await node('甲的孩子').click({ modifiers: ['Alt'] })
+  await node('甲的孙节点').click({ modifiers: ['Alt'] })
+  await node('分支乙').click({ modifiers: ['Alt'] })
   await expect(page.locator('.mind-node.selected')).toHaveCount(4)
   const aId = await node('分支甲').getAttribute('data-node-id'),
     childId = await node('甲的孩子').getAttribute('data-node-id'),

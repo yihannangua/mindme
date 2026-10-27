@@ -208,6 +208,27 @@ def health(config, version):
     raise RuntimeError("健康或就绪检查失败")
 
 
+def auth_state(config):
+    base = f"http://127.0.0.1:{config.get('port', 3180)}"
+    with urllib.request.urlopen(base + "/auth/session", timeout=5) as response:
+        require(response.status == 200, "认证状态检查失败")
+        data = json.load(response)
+    keys = ("configured", "authMode", "passkeyReady", "setupAvailable")
+    require(isinstance(data, dict) and all(key in data for key in keys), "认证状态字段缺失")
+    require(isinstance(data["configured"], bool) and isinstance(data["passkeyReady"], bool)
+            and isinstance(data["setupAvailable"], bool) and data["authMode"] in ("passkey", "google"), "认证状态字段无效")
+    return {key: data[key] for key in keys}
+
+
+def validate_before_switch(old_auth, candidate_auth, live, backup):
+    require(candidate_auth == old_auth, "候选应用认证状态与原版本不一致")
+    require(live.get("integrity") == "ok", "候选应用数据库完整性检查失败")
+    require(live.get("schema") == backup["schema"], "应用改变数据结构，停止自动回滚")
+    require(live.get("content") == backup["content"] and live.get("counts") == backup["counts"],
+            "备份后生产数据发生变化，保全新写入并停止切换")
+    return {"auth": candidate_auth, "databaseVerified": True}
+
+
 def snapshot(config, container, path="/var/lib/mindme/mindme.sqlite"):
     return json.loads(docker("exec", "-i", container, "node", "-", path,
                              input_data=config["summaryScript"]))
@@ -235,7 +256,8 @@ def backup_and_compatibility(config, data, container, images, key):
             require(after == before, "备份恢复或新旧应用兼容性核验失败：结构或内容发生变化")
     return {"path": str(destination), "mode": "600", "size": destination.stat().st_size,
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(), "quickCheck": before["integrity"],
-            "restored": True, "compatible": True, "schema": before["schema"]}
+            "restored": True, "compatible": True, "schema": before["schema"],
+            "content": before["content"], "counts": before["counts"]}
 
 
 def atomic_current(root, target):
@@ -247,6 +269,7 @@ def atomic_current(root, target):
 def apply(config, root, env, data):
     current, old = inspect(config, root, data)
     old_version = json.loads((current / "package.json").read_text())["version"]
+    old_auth = auth_state(config)
     if config["command"] == "deploy":
         target = root / "releases" / config["release"]
         require(not target.exists(), "新发布目录已存在")
@@ -295,7 +318,7 @@ def apply(config, root, env, data):
         live_id = compose(config, target, "ps", "-q", "mindme")
         live = json.loads(docker("inspect", live_id))[0]
         require(live["Image"] == image_info["Id"], "运行镜像与已验证摘要不符")
-        require(snapshot(config, live_id)["schema"] == backup["schema"], "应用改变数据结构，停止自动回滚")
+        pre_switch = validate_before_switch(old_auth, auth_state(config), snapshot(config, live_id), backup)
         atomic_current(root, target)
     except Exception:
         ids = compose(config, target, "ps", "-q", "mindme")
@@ -305,7 +328,7 @@ def apply(config, root, env, data):
         atomic_current(root, current)
         raise
     record = {"sourceSha": config["sha"], "ciRun": config["ciRunId"], "packageSha256": config["packageSha256"],
-              "imageId": image_info["Id"], "previousRelease": str(current), "backup": backup, **results,
+              "imageId": image_info["Id"], "previousRelease": str(current), "backup": backup, "preSwitch": pre_switch, **results,
               "databaseRestored": False, "command": config["command"]}
     record_path = target / ("deployment-record.json" if config["command"] == "deploy" else "rollback-record.json")
     record_path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n")

@@ -12,6 +12,47 @@ async function login(context: BrowserContext) {
     csrf: string
   }
 }
+test('节点字体、字号和背景跨设备同步并在重新打开后保留', async ({ browser }) => {
+  const a = await browser.newContext(),
+    b = await browser.newContext()
+  try {
+    await login(a)
+    await login(b)
+    const pageA = await a.newPage(),
+      pageB = await b.newPage()
+    const title = `样式同步-${Date.now()}`
+    await pageA.goto(base)
+    await expect(pageA.getByRole('button', { name: '已同步', exact: true })).toBeVisible({
+      timeout: 20000,
+    })
+    await pageA.getByRole('button', { name: '新建脑图', exact: true }).first().click()
+    await pageA.getByLabel('脑图名称').fill(title)
+    await pageA.getByRole('button', { name: '创建脑图', exact: true }).click()
+    await pageA.getByRole('button', { name: `节点 ${title}`, exact: true }).click()
+    await pageA.getByLabel('字体', { exact: true }).selectOption('serif')
+    await pageA.getByLabel('字号', { exact: true }).selectOption('30')
+    await pageA.getByRole('button', { name: '背景色 #273b48' }).click()
+    await expect(pageA.getByRole('button', { name: '已同步', exact: true })).toBeVisible({
+      timeout: 20000,
+    })
+    await pageB.goto(base)
+    await expect(
+      pageB.getByRole('navigation').getByRole('button', { name: title, exact: true }),
+    ).toBeVisible({ timeout: 20000 })
+    await pageB.getByRole('navigation').getByRole('button', { name: title, exact: true }).click()
+    const root = pageB.getByRole('button', { name: `节点 ${title}`, exact: true })
+    await expect(root.locator('text.node-label')).toHaveCSS('font-size', '30px')
+    await expect(root.locator('rect').first()).toHaveCSS('fill', 'rgb(39, 59, 72)')
+    await root.click()
+    await expect(pageB.getByLabel('字体', { exact: true })).toHaveValue('serif')
+    await pageB.reload()
+    await expect(root.locator('text.node-label')).toHaveCSS('font-size', '30px')
+    await expect(root.locator('rect').first()).toHaveCSS('fill', 'rgb(39, 59, 72)')
+  } finally {
+    await a.close()
+    await b.close()
+  }
+})
 test('HTTP 鉴权、CSRF、越权、路由边界与退出后会话失效', async ({ browser }) => {
   const anonymous = await browser.newContext(),
     authenticated = await browser.newContext()

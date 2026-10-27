@@ -120,6 +120,7 @@ export function createMindmeServer(
           ok: !closing,
           version: APP_VERSION,
           schemaVersion: 1,
+          capabilities: { nodeStyleFields: true },
           backend: 'node-sqlite',
           migrationReady: migrationReady(),
         },
