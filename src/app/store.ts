@@ -210,6 +210,17 @@ export class AppStore {
       throw error
     }
   }
+  private forkSnapshot(): LocalSnapshot {
+    const current = this.view.snapshot
+    assert(current, '本地数据尚未就绪')
+    // space 和云端基线只读共享；操作前仍复制 space，队列和草稿保持独立。
+    return {
+      ...current,
+      outbox: clone(current.outbox),
+      drafts: clone(current.drafts),
+      localTabs: current.localTabs ? { ...current.localTabs } : undefined,
+    }
+  }
   transform(
     transform: (space: Space) => Space,
     mapId?: string,
@@ -217,11 +228,12 @@ export class AppStore {
     atomic = false,
     intent: Operation['intent'] = 'edit',
     applied?: () => void,
+    commandOwnsClone = false,
   ): Promise<void> {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
-      const next = transform(clone(snapshot.space))
+      const next = transform(commandOwnsClone ? snapshot.space : clone(snapshot.space))
       validateSpace(next)
       const changes = diffSpace(snapshot.space, next)
       if (!changes.length) return
@@ -277,11 +289,12 @@ export class AppStore {
       ['restore', 'purge'].includes(command.type),
       command.type === 'restore' ? 'restore' : 'edit',
       () => applied?.(selectedId),
+      true,
     ).then(() => selectedId)
   }
   history(mapId: string, direction: 'undo' | 'redo') {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       const source = direction === 'undo' ? this.undo : this.redo,
         destination = direction === 'undo' ? this.redo : this.undo
@@ -314,17 +327,35 @@ export class AppStore {
   }
   editorDraft(draft: LocalSnapshot['editorDraft'] | null) {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       if (draft) snapshot.editorDraft = draft
       else delete snapshot.editorDraft
-      await this.persist(snapshot)
+      this.emit({ snapshot, status: 'saving', error: this.view.error })
+      try {
+        assert(this.database, '本地数据库尚未就绪')
+        await this.database.saveDraft(draft)
+        if (this.view.snapshot === snapshot) {
+          if (this.unpersisted)
+            this.emit({
+              snapshot,
+              status: 'error',
+              error: this.view.error || '存在尚未保存的本地更改，请重试保存',
+            })
+          else this.emit({ snapshot, status: 'saved', error: '' })
+        }
+      } catch (error) {
+        this.unpersisted = true
+        if (this.view.snapshot === snapshot)
+          this.emit({ snapshot, status: 'error', error: message(error) })
+        throw error
+      }
     })
   }
   commitTextEdit(mapId: string, nodeId: string, text: string, original: string) {
     let prepared: LocalSnapshot
     try {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       const map = snapshot.space.maps[mapId],
         node = map?.nodes[nodeId]
@@ -366,7 +397,7 @@ export class AppStore {
     this.redo.delete(mapId)
     this.emit({ snapshot: prepared, status: 'saving', error: '' })
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       delete snapshot.editorDraft
       await this.persist(snapshot)
@@ -395,7 +426,7 @@ export class AppStore {
   }
   acknowledge(response: SyncResponse, sentIds: string[]) {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       assert(
         snapshot.ownerSub === null || snapshot.ownerSub === response.subject,
@@ -410,6 +441,27 @@ export class AppStore {
           typeof response.subject === 'string',
         '云端返回了不支持的同步数据',
       )
+      if (
+        snapshot.ownerSub !== null &&
+        snapshot.serverSpace &&
+        response.space === null &&
+        response.baseSeq === snapshot.serverSeq &&
+        response.seq === snapshot.serverSeq &&
+        Array.isArray(response.changes) &&
+        response.changes.length === 0 &&
+        response.results.length === 0 &&
+        sentIds.length === 0 &&
+        !this.unpersisted &&
+        snapshot.outbox.length === 0 &&
+        equal(snapshot.space, snapshot.serverSpace) &&
+        Object.entries(snapshot.localTabs ?? {}).every(
+          ([mapId, open]) =>
+            !snapshot.space.tabs[mapId] ||
+            snapshot.space.maps[mapId]?.deletedAt !== null ||
+            snapshot.space.tabs[mapId].open === open,
+        )
+      )
+        return
       const confirmedSpace =
         response.space ??
         (() => {
@@ -484,7 +536,7 @@ export class AppStore {
   }
   outboxState(ids: string[], state: Operation['state'], reason?: string) {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       for (const op of snapshot.outbox)
         if (ids.includes(op.opId)) {
@@ -504,7 +556,7 @@ export class AppStore {
   }
   rekeyRejected(ids: string[]) {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '本地数据尚未就绪')
       for (const op of snapshot.outbox)
         if (ids.includes(op.opId) && op.state === 'sending') {
@@ -516,7 +568,7 @@ export class AppStore {
   }
   discardDraft(id: string) {
     return this.serial(async () => {
-      const snapshot = clone(this.view.snapshot)
+      const snapshot = this.forkSnapshot()
       assert(snapshot, '没有本地数据')
       const draft = snapshot.drafts.find((draft) => draft.id === id)
       snapshot.drafts = snapshot.drafts.filter((draft) => draft.id !== id)
