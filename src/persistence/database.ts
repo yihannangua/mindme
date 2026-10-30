@@ -1,5 +1,12 @@
 import { validateSpace } from '../domain/model'
-import { assert, clone, equal, SCHEMA_VERSION, type LocalSnapshot } from '../domain/types'
+import {
+  assert,
+  clone,
+  equal,
+  SCHEMA_VERSION,
+  type LocalSnapshot,
+  type Space,
+} from '../domain/types'
 
 export const DB_VERSION = 1
 const STORES = [
@@ -16,6 +23,7 @@ const STORES = [
 export class LocalDatabase {
   private generation = 0
   private lastSaved: LocalSnapshot | null = null
+  private lastServerSpace: Space | undefined
   private constructor(private db: IDBDatabase) {}
   static open(name = 'mindme.v1'): Promise<LocalDatabase> {
     return new Promise((resolve, reject) => {
@@ -38,12 +46,24 @@ export class LocalDatabase {
     this.db.close()
   }
   async load(): Promise<LocalSnapshot | null> {
-    this.generation = Number((await this.get('metadata', 'generation')) ?? 0)
-    const value = (await this.get('metadata', 'snapshot')) as LocalSnapshot | undefined
+    const { generation, value } = await new Promise<{
+      generation: number
+      value: LocalSnapshot | undefined
+    }>((resolve, reject) => {
+      const tx = this.db.transaction('metadata', 'readonly')
+      const store = tx.objectStore('metadata')
+      const generation = store.get('generation'),
+        value = store.get('snapshot')
+      tx.oncomplete = () =>
+        resolve({ generation: Number(generation.result ?? 0), value: value.result })
+      tx.onabort = () => reject(tx.error ?? new Error('读取本地快照失败'))
+    })
+    this.generation = generation
     if (!value) return null
     try {
       validateSnapshot(value)
-      this.lastSaved = clone(value)
+      this.lastSaved = clone({ ...value, serverSpace: undefined })
+      this.lastServerSpace = value.serverSpace
       return value
     } catch (error) {
       await new Promise<void>((resolve, reject) => {
@@ -64,6 +84,39 @@ export class LocalDatabase {
       const request = tx.objectStore(store).get(key)
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
+    })
+  }
+  saveDraft(draft: LocalSnapshot['editorDraft'] | null): Promise<void> {
+    assert(this.lastSaved, '尚无已保存的本地快照，无法单独保存草稿')
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('metadata', 'readwrite')
+      const store = tx.objectStore('metadata')
+      let conflict = false
+      const generation = store.get('generation')
+      generation.onsuccess = () => {
+        if (Number(generation.result ?? 0) !== this.generation) {
+          conflict = true
+          tx.abort()
+        }
+      }
+      const snapshot = { ...this.lastSaved!, serverSpace: this.lastServerSpace }
+      if (draft) snapshot.editorDraft = draft
+      else delete snapshot.editorDraft
+      // 草稿写入旧版同样认识的完整快照；代次与快照在同一事务提交。
+      store.put(this.generation + 1, 'generation')
+      store.put(snapshot, 'snapshot')
+      tx.oncomplete = () => {
+        this.generation++
+        if (draft) this.lastSaved!.editorDraft = clone(draft)
+        else delete this.lastSaved!.editorDraft
+        resolve()
+      }
+      tx.onabort = () =>
+        reject(
+          conflict
+            ? new Error('其他页面已修改本地数据。请先导出当前草稿，再重新打开本页，避免覆盖')
+            : (tx.error ?? new Error('本地保存失败，可能是磁盘空间不足或浏览器限制')),
+        )
     })
   }
   save(snapshot: LocalSnapshot): Promise<void> {
@@ -137,7 +190,8 @@ export class LocalDatabase {
       }
       tx.oncomplete = () => {
         this.generation++
-        this.lastSaved = clone(snapshot)
+        this.lastSaved = clone({ ...snapshot, serverSpace: undefined })
+        this.lastServerSpace = snapshot.serverSpace
         resolve()
       }
       tx.onerror = () => {

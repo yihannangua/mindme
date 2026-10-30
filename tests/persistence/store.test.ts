@@ -5,7 +5,7 @@ import { children, createMap } from '../../src/domain/model'
 import { execute } from '../../src/domain/commands'
 import { importDrafts } from '../../src/importers/backup'
 import { parseOutline } from '../../src/importers/outline'
-import { emptySpace } from '../../src/domain/types'
+import { emptySpace, LIMITS } from '../../src/domain/types'
 import { mergeOperation, newServerState } from '../../src/sync/protocol'
 import { LocalDatabase } from '../../src/persistence/database'
 import { ctx, first, operation } from '../helpers'
@@ -346,6 +346,179 @@ describe('应用状态与保存确认', () => {
     expect(store.getSnapshot().status).toBe('saved')
     expect(store.getSnapshot().snapshot!.outbox).toHaveLength(2)
   })
+  it('超长未提交草稿重启后完整保留为可复制草稿，不改变原节点', async () => {
+    const store = new AppStore()
+    await store.init()
+    const map = first(store.getSnapshot().snapshot!.space),
+      text = '长'.repeat(LIMITS.text + 1)
+    await store.editorDraft({
+      mapId: map.id,
+      nodeId: map.rootId,
+      text,
+      original: map.title,
+      at: Date.now(),
+    })
+    const reopened = new AppStore()
+    await reopened.init()
+    const recovered = reopened.getSnapshot().snapshot!
+    expect(reopened.getSnapshot().status).toBe('saved')
+    expect(recovered.space.maps[map.id].nodes[map.rootId].text).toBe(map.title)
+    expect(recovered.drafts.some((draft) => draft.text === text)).toBe(true)
+    expect(recovered.editorDraft).toBeUndefined()
+  })
+  it('草稿事务失败后保留未保存提示，完整重试前不误报保存成功', async () => {
+    const store = new AppStore()
+    await store.init()
+    const map = first(store.getSnapshot().snapshot!.space),
+      draft = {
+        mapId: map.id,
+        nodeId: map.rootId,
+        text: '待恢复文字',
+        original: map.title,
+        at: Date.now(),
+      }
+    vi.spyOn(LocalDatabase.prototype, 'saveDraft').mockRejectedValueOnce(new Error('测试配额不足'))
+    await expect(store.editorDraft(draft)).rejects.toThrow('配额')
+    expect(store.getSnapshot().status).toBe('error')
+    expect(store.hasUnpersisted).toBe(true)
+    expect(store.getSnapshot().snapshot?.editorDraft).toEqual(draft)
+    await store.editorDraft({ ...draft, text: '草稿再次保存' })
+    expect(store.getSnapshot().status).toBe('error')
+    expect(store.hasUnpersisted).toBe(true)
+    await store.retrySave()
+    expect(store.getSnapshot().status).toBe('saved')
+    expect(store.hasUnpersisted).toBe(false)
+    const reopened = new AppStore()
+    await reopened.init()
+    expect(reopened.getSnapshot().snapshot?.space.maps[map.id].title).toBe('草稿再次保存')
+    expect(reopened.getSnapshot().snapshot?.outbox.length).toBeGreaterThan(0)
+  })
+  it('空增量同步仍重放待同步操作并保留未提交草稿', async () => {
+    const store = new AppStore()
+    await store.init()
+    const initial = store.getSnapshot().snapshot!,
+      server = mergeOperation(newServerState(), initial.outbox[0], Date.now())
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: server.state.space,
+        seq: server.state.seq,
+        results: [server.result],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [initial.outbox[0].opId],
+    )
+    const map = first(store.getSnapshot().snapshot!.space)
+    await store.command(map.id, { type: 'text', nodeId: map.rootId, text: '本机待同步文字' })
+    await store.editorDraft({
+      mapId: map.id,
+      nodeId: map.rootId,
+      text: '未提交文字',
+      original: '本机待同步文字',
+      at: Date.now(),
+    })
+    const before = structuredClone(store.getSnapshot().snapshot!)
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: null,
+        baseSeq: before.serverSeq,
+        seq: before.serverSeq,
+        changes: [],
+        results: [],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [],
+    )
+    expect(store.getSnapshot().snapshot?.outbox).toEqual(before.outbox)
+    expect(store.getSnapshot().snapshot?.editorDraft).toEqual(before.editorDraft)
+    const reopened = new AppStore()
+    await reopened.init()
+    expect(reopened.getSnapshot().snapshot?.space.maps[map.id].title).toBe('未提交文字')
+    const recovered = reopened.getSnapshot().snapshot!
+    expect(
+      before.outbox.every((op) => recovered.outbox.some((item) => item.opId === op.opId)),
+    ).toBe(true)
+    expect(
+      recovered.outbox.some((op) => op.changes.some((change) => change.after === '未提交文字')),
+    ).toBe(true)
+  })
+  it('本地空间与云端基线完全相同且无待同步操作时跳过空增量保存', async () => {
+    const store = new AppStore()
+    await store.init()
+    const initial = store.getSnapshot().snapshot!,
+      server = mergeOperation(newServerState(), initial.outbox[0], Date.now())
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: server.state.space,
+        seq: server.state.seq,
+        results: [server.result],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [initial.outbox[0].opId],
+    )
+    const before = structuredClone(store.getSnapshot().snapshot!),
+      save = vi.spyOn(LocalDatabase.prototype, 'save')
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: null,
+        baseSeq: before.serverSeq,
+        seq: before.serverSeq,
+        changes: [],
+        results: [],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [],
+    )
+    expect(save).not.toHaveBeenCalled()
+    expect(store.getSnapshot().snapshot).toEqual(before)
+  })
+  it.each([false, true])('云端空响应仍处理被拒绝或丢弃的操作（先丢弃：%s）', async (discard) => {
+    const store = new AppStore()
+    await store.init()
+    const initial = store.getSnapshot().snapshot!,
+      server = mergeOperation(newServerState(), initial.outbox[0], Date.now()),
+      map = first(server.state.space)
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: server.state.space,
+        seq: server.state.seq,
+        results: [server.result],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [initial.outbox[0].opId],
+    )
+    await store.command(map.id, { type: 'text', nodeId: map.rootId, text: '云端拒绝的文字' })
+    const opId = store.getSnapshot().snapshot!.outbox[0].opId
+    await store.outboxState([opId], 'attention')
+    if (discard) await store.discardDraft(store.getSnapshot().snapshot!.drafts[0].id)
+    const before = store.getSnapshot().snapshot!
+    await store.acknowledge(
+      {
+        schemaVersion: 1,
+        space: null,
+        baseSeq: before.serverSeq,
+        seq: before.serverSeq,
+        changes: [],
+        results: [],
+        serverTime: Date.now(),
+        subject: 'test-user',
+      },
+      [],
+    )
+    const after = store.getSnapshot().snapshot!
+    expect(after.space.maps[map.id].title).toBe(map.title)
+    expect(after.drafts).toHaveLength(discard ? 0 : 1)
+    expect(after.outbox).toHaveLength(discard ? 0 : 1)
+  })
   it('回车提交文字与清理编辑草稿在同一事务中完成', async () => {
     const store = new AppStore()
     await store.init()
@@ -392,8 +565,13 @@ describe('应用状态与保存确认', () => {
     const map = first(store.getSnapshot().snapshot!.space),
       original = map.nodes[map.rootId].text
     const save = LocalDatabase.prototype.save
+    const saveDraft = LocalDatabase.prototype.saveDraft
     const releases: Array<() => void> = []
     LocalDatabase.prototype.save = () =>
+      new Promise<void>((resolve) => {
+        releases.push(resolve)
+      })
+    LocalDatabase.prototype.saveDraft = () =>
       new Promise<void>((resolve) => {
         releases.push(resolve)
       })
@@ -426,6 +604,7 @@ describe('应用状态与保存确认', () => {
       expect(store.getSnapshot().snapshot!.editorDraft).toBeUndefined()
     } finally {
       LocalDatabase.prototype.save = save
+      LocalDatabase.prototype.saveDraft = saveDraft
       releases.forEach((release) => release())
     }
   })
