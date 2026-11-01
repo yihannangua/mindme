@@ -71,6 +71,25 @@ function readNode(value: unknown): WorkspaceNode | null {
   return null
 }
 
+// 只交换树中的分区位置，不修改分区内容、选择或视角。
+export function swapPanePositions(root: WorkspaceNode, firstId: string, secondId: string) {
+  if (firstId === secondId) return root
+  const contains = (node: WorkspaceNode, id: string): boolean =>
+    node.type === 'pane'
+      ? node.paneId === id
+      : contains(node.first, id) || contains(node.second, id)
+  if (!contains(root, firstId) || !contains(root, secondId)) return root
+  const swap = (node: WorkspaceNode): WorkspaceNode => {
+    if (node.type === 'pane') {
+      if (node.paneId === firstId) return { ...node, paneId: secondId }
+      if (node.paneId === secondId) return { ...node, paneId: firstId }
+      return node
+    }
+    return { ...node, first: swap(node.first), second: swap(node.second) }
+  }
+  return swap(root)
+}
+
 export function defaultWorkspace(mapId: string): WorkspaceState {
   const paneId = `pane-${crypto.randomUUID()}`
   return {

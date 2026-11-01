@@ -393,10 +393,10 @@ button.primary:hover {
   gap: 1px;
 }
 .workspace-split.row {
-  grid-template-columns: var(--workspace-first) 7px var(--workspace-second);
+  grid-template-columns: minmax(0, var(--workspace-first)) 11px minmax(0, var(--workspace-second));
 }
 .workspace-split.column {
-  grid-template-rows: var(--workspace-first) 7px var(--workspace-second);
+  grid-template-rows: minmax(0, var(--workspace-first)) 11px minmax(0, var(--workspace-second));
 }
 .workspace-child {
   min-width: 0;
@@ -409,17 +409,46 @@ button.primary:hover {
   z-index: 2;
   touch-action: none;
 }
+.workspace-divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -5px;
+}
 .workspace-divider::after {
   content: '';
   position: absolute;
-  inset: 0 2px;
-  background: var(--line);
+  background: #aabdc8;
+  border-radius: 4px;
+  pointer-events: none;
 }
 .workspace-split.row > .workspace-divider {
   cursor: col-resize;
 }
+.workspace-split.row > .workspace-divider::after {
+  left: 4px;
+  right: 4px;
+  top: calc(50% - 18px);
+  height: 36px;
+}
 .workspace-split.column > .workspace-divider {
   cursor: row-resize;
+}
+.workspace-split.column > .workspace-divider::before {
+  inset: -5px 0;
+}
+.workspace-split.column > .workspace-divider::after {
+  top: 4px;
+  bottom: 4px;
+  left: calc(50% - 18px);
+  width: 36px;
+}
+.workspace-divider:hover,
+.workspace-divider:focus-visible {
+  background: #dceaf1;
+}
+.workspace-divider:focus-visible {
+  outline: 2px solid #4b88b3;
+  outline-offset: -2px;
 }
 .workspace-pane {
   flex: 1;
@@ -429,6 +458,23 @@ button.primary:hover {
   display: flex;
   flex-direction: column;
   background: #fff;
+}
+.workspace-pane:fullscreen,
+.workspace-pane.viewport-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+.workspace-pane:fullscreen::backdrop {
+  background: #fff;
+}
+.workspace-pane.viewport-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
 }
 .workspace-pane.active {
   box-shadow: inset 0 0 0 2px #6f9fba;
@@ -557,6 +603,39 @@ button.primary:hover {
 .workspace-pane-header > button {
   flex: 0 0 auto;
 }
+.workspace-pane-header .workspace-pane-grip {
+  display: grid;
+  width: 25px;
+  place-items: center;
+  padding: 3px;
+  color: #6a8190;
+  cursor: grab;
+  touch-action: none;
+}
+.workspace-pane-header .workspace-pane-grip:active {
+  cursor: grabbing;
+}
+.workspace-pane-header .workspace-pane-grip:focus-visible {
+  outline: 2px solid #4b88b3;
+  outline-offset: 1px;
+}
+.workspace-fullscreen-save {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #6f8390;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.workspace-fullscreen-save.error {
+  color: #b84a40;
+}
+.workspace-fullscreen-save button {
+  padding: 2px 5px;
+  color: #b84a40;
+  background: #fbeeed;
+}
 .workspace-pane-content {
   flex: 1;
   min-height: 0;
@@ -602,9 +681,55 @@ button.primary:hover {
   color: #315d76;
   background: #edf4f7;
 }
-.workspace-pane-actions button:last-child:hover {
+.workspace-pane-actions button.workspace-fullscreen-exit {
+  width: auto;
+  padding: 4px 8px;
+  color: #315d76;
+  font-size: 12px;
+}
+.workspace-fullscreen-mode {
+  align-self: center;
+  padding: 0 3px;
+  color: #6f8390;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.workspace-fullscreen-toast {
+  position: absolute;
+  z-index: 6;
+  bottom: 55px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(700px, 90%);
+  padding: 9px 12px;
+  border: 1px solid #dce4e9;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 5px 20px #2936401c;
+  color: #506777;
+  transform: translateX(-50%);
+}
+.workspace-fullscreen-toast button {
+  padding: 3px;
+}
+.workspace-pane-actions button.workspace-pane-close:hover {
   color: #b84a40;
   background: #fbeeed;
+}
+.workspace-pane-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.workspace-pane.drop-swap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border: 3px dashed #5f97b5;
+  background: #78a9c72e;
+  pointer-events: none;
 }
 .workspace-pane.drop-first-row::after,
 .workspace-pane.drop-second-row::after,
