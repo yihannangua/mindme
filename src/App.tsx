@@ -316,7 +316,11 @@ export default function App() {
         setSelectedId(selectedId)
       try {
         const selected = await appStore.command(activeId, command, (id) => {
-          if (id) setSelectedId(id)
+          if (id) {
+            setSelectedId(id)
+            if (command.type === 'delete' || command.type === 'delete-many')
+              setFocusRequest((request) => request + 1)
+          }
         })
         return selected
       } catch (error) {

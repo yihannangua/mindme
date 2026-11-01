@@ -7,6 +7,7 @@ import {
   MARKERS,
   type Context,
   type MarkerCategory,
+  type MapContent,
   type NodeFont,
   type Space,
 } from './types'
@@ -37,6 +38,22 @@ export type Command =
   | { type: 'untrash' }
   | { type: 'purge' }
   | { type: 'restore'; versionId: string }
+
+// 删除后优先选择后续同级，末尾则选择最近的前一个，没有同级时回到父节点。
+function selectionAfterDelete(map: MapContent, id: string, removed: Set<string>): string {
+  const node = map.nodes[id],
+    parentId = node.parentId!,
+    siblings = children(map, parentId),
+    index = siblings.findIndex((sibling) => sibling.id === id)
+  return (
+    siblings.slice(index + 1).find((sibling) => !removed.has(sibling.id))?.id ??
+    siblings
+      .slice(0, index)
+      .reverse()
+      .find((sibling) => !removed.has(sibling.id))?.id ??
+    parentId
+  )
+}
 
 export function execute(
   space: Space,
@@ -85,7 +102,7 @@ export function execute(
     }
     case 'delete': {
       assert(node!.parentId !== null, '中心主题不能直接删除，请将脑图移至回收站')
-      selectedId = node!.parentId!
+      selectedId = selectionAfterDelete(map, node!.id, new Set([node!.id]))
       for (const id of subtree(map, node!.id)) delete map.nodes[id]
       break
     }
@@ -96,7 +113,7 @@ export function execute(
       )
       assert(!command.nodeIds.includes(map.rootId), '中心主题不能批量删除')
       const forest = selectedForest(map, command.nodeIds)
-      selectedId = map.nodes[forest.roots[0]].parentId!
+      selectedId = selectionAfterDelete(map, forest.roots[0], forest.ids)
       for (const id of forest.roots)
         for (const descendant of subtree(map, id)) delete map.nodes[descendant]
       break

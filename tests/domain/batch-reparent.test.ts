@@ -32,7 +32,7 @@ describe('多选分支批量挂接', () => {
       ctx(),
     )
     expect(Object.keys(first(result.space).nodes)).toEqual([map.rootId, 'target', 'existing'])
-    expect(result.selectedId).toBe(map.rootId)
+    expect(result.selectedId).toBe('target')
     expect(() =>
       execute(source, map.id, { type: 'delete-many', nodeIds: [map.rootId, 'a'] }, ctx()),
     ).toThrow('中心主题')
