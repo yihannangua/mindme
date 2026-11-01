@@ -3,10 +3,12 @@ import {
   type ClipboardEvent,
   type CSSProperties,
   type DragEvent,
+  type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from 'react'
-import { Columns2, Rows2, X } from 'lucide-react'
+import { Columns2, GripVertical, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
+import type { ViewState } from '../app/store'
 import type { Command } from '../domain/commands'
 import type { MindMap, Space } from '../domain/types'
 import type { ImportDraft } from '../importers/outline'
@@ -14,6 +16,7 @@ import { Canvas } from '../editor/Canvas'
 import { singleSelection, type NodeSelection } from '../editor/selection'
 import {
   clampRatio,
+  swapPanePositions,
   type SplitDirection,
   type WorkspaceNode,
   type WorkspacePane,
@@ -40,6 +43,9 @@ interface Props {
   editRequest: number
   focusRequest: number
   fitRequests: Record<string, number>
+  saveState: Pick<ViewState, 'status' | 'pendingTasks' | 'error'>
+  notification: string
+  closeNotification: () => void
 }
 
 function replacePane(
@@ -99,18 +105,40 @@ type SplitPreset =
   | { type: 'selection'; nodeId: string | null }
   | { type: 'blank' }
   | { type: 'map'; mapId: string }
+type PaneDirection = 'left' | 'right' | 'up' | 'down'
+type DropTarget =
+  | { type: 'map'; paneId: string; direction: SplitDirection; placement: 'first' | 'second' }
+  | { type: 'pane'; paneId: string }
+type PaneFullscreen = { paneId: string; mode: 'native' | 'viewport' }
+const PANE_DRAG_TYPE = 'text/x-mindme-pane'
 function PaneHeader({
   pane,
   map,
   maps,
   onChange,
   active,
+  canReorder,
+  onDragStart,
+  onDragEnd,
+  onGripPointerDown,
+  onMove,
+  fullscreenMode,
+  saveState,
+  retrySave,
 }: {
   pane: WorkspacePane
   map?: MindMap
   maps: MindMap[]
   onChange: (patch: Partial<WorkspacePane>) => void
   active: boolean
+  canReorder: boolean
+  onDragStart: (event: DragEvent<HTMLButtonElement>) => void
+  onDragEnd: () => void
+  onGripPointerDown: (event: PointerEvent<HTMLButtonElement>) => void
+  onMove: (direction: PaneDirection) => void
+  fullscreenMode?: PaneFullscreen['mode']
+  saveState: Pick<ViewState, 'status' | 'pendingTasks' | 'error'>
+  retrySave: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -135,6 +163,33 @@ function PaneHeader({
   }, [menuOpen])
   return (
     <div className={`workspace-pane-header ${active ? 'active' : ''}`} ref={menuRef}>
+      {canReorder && (
+        <button
+          type="button"
+          className="workspace-pane-grip"
+          draggable
+          aria-label="拖动画布调整位置"
+          aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown"
+          title="拖动到另一画布交换位置，也可使用方向键"
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          onPointerDown={onGripPointerDown}
+          onKeyDown={(event) => {
+            const direction = {
+              ArrowLeft: 'left',
+              ArrowRight: 'right',
+              ArrowUp: 'up',
+              ArrowDown: 'down',
+            }[event.key] as PaneDirection | undefined
+            if (!direction) return
+            event.preventDefault()
+            event.stopPropagation()
+            onMove(direction)
+          }}
+        >
+          <GripVertical size={15} />
+        </button>
+      )}
       <div
         className="workspace-pane-summary"
         role="button"
@@ -175,6 +230,26 @@ function PaneHeader({
           <span>{summary}</span>
         )}
       </div>
+      {fullscreenMode && (
+        <div
+          className={`workspace-fullscreen-save ${saveState.status === 'error' ? 'error' : ''}`}
+          role={saveState.status === 'error' ? 'alert' : 'status'}
+          title={saveState.error || undefined}
+        >
+          <span>
+            {saveState.status === 'error'
+              ? '本地未保存'
+              : saveState.status === 'saving' || saveState.pendingTasks > 0
+                ? '正在本地保存…'
+                : '本地已保存'}
+          </span>
+          {saveState.status === 'error' && (
+            <button onPointerDown={(event) => event.preventDefault()} onClick={retrySave}>
+              重试保存
+            </button>
+          )}
+        </div>
+      )}
       {menuOpen && (
         <div className="workspace-pane-menu" role="menu" aria-label="分区操作">
           <div className="workspace-pane-menu-title">分区内容</div>
@@ -226,22 +301,52 @@ function PaneActions({
   paneCount,
   onSplit,
   onRemove,
+  fullscreen,
+  fullscreenMode,
+  canFullscreen,
+  onFullscreen,
 }: {
   paneId: string
   paneCount: number
   onSplit: (direction: SplitDirection) => void
   onRemove: () => void
+  fullscreen: boolean
+  fullscreenMode?: PaneFullscreen['mode']
+  canFullscreen: boolean
+  onFullscreen: () => void
 }) {
   return (
     <div className="workspace-pane-actions" aria-label={`画布 ${paneId} 操作`}>
-      <button aria-label="左右拆分画布" title="左右拆分画布" onClick={() => onSplit('row')}>
-        <Columns2 size={15} />
+      {fullscreenMode === 'viewport' && (
+        <span className="workspace-fullscreen-mode">窗口内全屏</span>
+      )}
+      {!fullscreen && (
+        <>
+          <button aria-label="左右拆分画布" title="左右拆分画布" onClick={() => onSplit('row')}>
+            <Columns2 size={15} />
+          </button>
+          <button aria-label="上下拆分画布" title="上下拆分画布" onClick={() => onSplit('column')}>
+            <Rows2 size={15} />
+          </button>
+        </>
+      )}
+      <button
+        className={fullscreen ? 'workspace-fullscreen-exit' : undefined}
+        aria-label={fullscreen ? '退出画布全屏' : '全屏显示当前画布'}
+        title={fullscreen ? '退出画布全屏' : '全屏显示当前画布'}
+        disabled={!canFullscreen}
+        onClick={onFullscreen}
+      >
+        {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        {fullscreen && <span>退出全屏</span>}
       </button>
-      <button aria-label="上下拆分画布" title="上下拆分画布" onClick={() => onSplit('column')}>
-        <Rows2 size={15} />
-      </button>
-      {paneCount > 1 && (
-        <button aria-label="关闭当前画布" title="关闭当前画布" onClick={onRemove}>
+      {paneCount > 1 && !fullscreen && (
+        <button
+          className="workspace-pane-close"
+          aria-label="关闭当前画布"
+          title="关闭当前画布"
+          onClick={onRemove}
+        >
           <X size={15} />
         </button>
       )}
@@ -265,19 +370,220 @@ export function Workspace({
   editRequest,
   focusRequest,
   fitRequests,
+  saveState,
+  notification,
+  closeNotification,
 }: Props) {
-  const resizing = useRef<{ id: string; direction: SplitDirection; rect: DOMRect } | null>(null)
-  const [dropTarget, setDropTarget] = useState<{
-    paneId: string
-    direction: SplitDirection
-    placement: 'first' | 'second'
-  } | null>(null)
+  const workspaceRef = useRef(workspace),
+    saveStateRef = useRef(saveState),
+    rootRef = useRef<HTMLDivElement>(null),
+    resizeCleanup = useRef<(() => void) | null>(null),
+    touchDragCleanup = useRef<(() => void) | null>(null),
+    draggingPane = useRef<string | null>(null),
+    pendingPaneDrop = useRef<{ source: string; target: string } | null>(null)
+  workspaceRef.current = workspace
+  saveStateRef.current = saveState
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null),
+    [fullscreen, setFullscreen] = useState<PaneFullscreen | null>(null)
   const pendingDrop = useRef<{
     mapId: string
     target: { paneId: string; direction: SplitDirection; placement: 'first' | 'second' }
   } | null>(null)
   const panes = workspace.panes
   const maps = Object.values(space.maps).filter((map) => map.deletedAt === null)
+  const findPane = (id: string) =>
+    Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('.workspace-pane[data-pane-id]') ?? [],
+    ).find((element) => element.dataset.paneId === id)
+  const applyWorkspace = (next: WorkspaceState) => {
+    workspaceRef.current = next
+    onWorkspaceChange(next)
+  }
+  useEffect(() => {
+    const changed = () => {
+      const element = document.fullscreenElement as HTMLElement | null,
+        paneId = element?.dataset.paneId
+      if (element && paneId && rootRef.current?.contains(element))
+        setFullscreen({ paneId, mode: 'native' })
+      else setFullscreen((current) => (current?.mode === 'native' ? null : current))
+    }
+    document.addEventListener('fullscreenchange', changed)
+    return () => document.removeEventListener('fullscreenchange', changed)
+  }, [])
+  useEffect(() => {
+    if (!fullscreen) return
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key !== 'Escape' ||
+        event.isComposing ||
+        document.querySelector('dialog[open]') ||
+        (event.target instanceof Element && event.target.closest('.canvas'))
+      )
+        return
+      event.preventDefault()
+      event.stopPropagation()
+      if (fullscreen.mode === 'native' && document.fullscreenElement)
+        void document.exitFullscreen().catch(() => notify('无法退出系统全屏，请使用浏览器退出全屏'))
+      else setFullscreen(null)
+    }
+    window.addEventListener('keydown', escape, true)
+    return () => window.removeEventListener('keydown', escape, true)
+  }, [fullscreen, notify])
+  useEffect(() => {
+    if (fullscreen && !panes[fullscreen.paneId]) setFullscreen(null)
+  }, [fullscreen, panes])
+  useEffect(
+    () => () => {
+      resizeCleanup.current?.()
+      touchDragCleanup.current?.()
+    },
+    [],
+  )
+  const focusPaneCanvas = (paneId: string) => {
+    findPane(paneId)?.querySelector<HTMLElement>('.canvas')?.focus({ preventScroll: true })
+  }
+  const toggleFullscreen = async (paneId: string) => {
+    if (fullscreen?.paneId === paneId) {
+      if (fullscreen.mode === 'native' && document.fullscreenElement) {
+        try {
+          await document.exitFullscreen()
+          focusPaneCanvas(paneId)
+        } catch {
+          notify('无法退出系统全屏，请使用浏览器退出全屏')
+        }
+      } else {
+        setFullscreen(null)
+        focusPaneCanvas(paneId)
+      }
+      return
+    }
+    const element = findPane(paneId)
+    if (!element) return
+    if (document.fullscreenElement && !document.fullscreenElement.contains(element)) {
+      notify('请先退出当前全屏')
+      return
+    }
+    onActivate(paneId)
+    if (document.fullscreenEnabled && element.requestFullscreen) {
+      try {
+        await element.requestFullscreen()
+        if (document.fullscreenElement === element) {
+          setFullscreen({ paneId, mode: 'native' })
+          focusPaneCanvas(paneId)
+        }
+        return
+      } catch {
+        // 系统全屏不可用时仅放大到当前浏览器窗口，不改变分区布局。
+      }
+    }
+    setFullscreen({ paneId, mode: 'viewport' })
+    focusPaneCanvas(paneId)
+    notify('浏览器未允许系统全屏，已放大到当前窗口')
+  }
+  const swapPanes = (source: string, target: string) => {
+    if (saveStateRef.current.status === 'error') {
+      notify('请先恢复本地保存，再调整画布位置')
+      return false
+    }
+    if ([source, target].some((id) => findPane(id)?.querySelector('.inline-editor'))) {
+      notify('请先完成当前文字编辑，再调整画布位置')
+      return false
+    }
+    const current = workspaceRef.current,
+      root = swapPanePositions(current.root, source, target)
+    if (root === current.root) return false
+    applyWorkspace({ ...current, root })
+    return true
+  }
+  const beginTouchPaneDrag = (event: PointerEvent<HTMLButtonElement>, paneId: string) => {
+    if (
+      !['touch', 'pen'].includes(event.pointerType) ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      fullscreen ||
+      touchDragCleanup.current
+    )
+      return
+    const grip = event.currentTarget,
+      pointerId = event.pointerId,
+      startX = event.clientX,
+      startY = event.clientY
+    let moved = false,
+      target: string | null = null
+    const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return
+      if (!moved && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 8) return
+      moved = true
+      moveEvent.preventDefault()
+      const element = document
+        .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+        ?.closest<HTMLElement>('.workspace-pane[data-pane-id]')
+      target =
+        element && rootRef.current?.contains(element) && element.dataset.paneId !== paneId
+          ? (element.dataset.paneId ?? null)
+          : null
+      setDropTarget(target ? { type: 'pane', paneId: target } : null)
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', cleanup)
+      grip.removeEventListener('lostpointercapture', cancel)
+      touchDragCleanup.current = null
+      setDropTarget(null)
+      if (grip.hasPointerCapture?.(pointerId)) grip.releasePointerCapture?.(pointerId)
+    }
+    const end = (endEvent: globalThis.PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return
+      const selected = moved ? target : null
+      cleanup()
+      if (selected) swapPanes(paneId, selected)
+    }
+    const cancel = (cancelEvent: globalThis.PointerEvent) => {
+      if (cancelEvent.pointerId === pointerId) cleanup()
+    }
+    touchDragCleanup.current = cleanup
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cleanup)
+    grip.addEventListener('lostpointercapture', cancel)
+    try {
+      grip.setPointerCapture(pointerId)
+    } catch {
+      // 没有指针捕获时仍由窗口监听完成或取消拖动。
+    }
+    event.preventDefault()
+  }
+  const movePane = (paneId: string, direction: PaneDirection) => {
+    const source = findPane(paneId)
+    if (!source) return
+    const bounds = source.getBoundingClientRect(),
+      x = bounds.left + bounds.width / 2,
+      y = bounds.top + bounds.height / 2
+    const candidates = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('.workspace-pane[data-pane-id]') ?? [],
+    )
+      .filter((element) => element !== source)
+      .map((element) => {
+        const rect = element.getBoundingClientRect(),
+          dx = rect.left + rect.width / 2 - x,
+          dy = rect.top + rect.height / 2 - y,
+          primary =
+            direction === 'left' ? -dx : direction === 'right' ? dx : direction === 'up' ? -dy : dy,
+          cross = direction === 'left' || direction === 'right' ? Math.abs(dy) : Math.abs(dx)
+        return { id: element.dataset.paneId, primary, score: primary + 2 * cross }
+      })
+      .filter((item) => item.id && item.primary > 1)
+      .sort((a, b) => a.score - b.score)
+    const target = candidates[0]?.id
+    if (!target) return
+    if (swapPanes(paneId, target))
+      requestAnimationFrame(() =>
+        findPane(paneId)?.querySelector<HTMLButtonElement>('.workspace-pane-grip')?.focus(),
+      )
+  }
   const updatePane = (paneId: string, patch: Partial<WorkspacePane>) => {
     const pane = panes[paneId]
     if (pane)
@@ -335,28 +641,72 @@ export function Workspace({
   }
   const beginResize = (
     event: PointerEvent<HTMLDivElement>,
-    id: string,
-    direction: SplitDirection,
+    node: Extract<WorkspaceNode, { type: 'split' }>,
   ) => {
-    const rect = event.currentTarget.parentElement!.getBoundingClientRect()
-    resizing.current = { id, direction, rect }
+    if (event.button !== 0 || !event.isPrimary || resizeCleanup.current) return
+    const divider = event.currentTarget,
+      parent = divider.parentElement!,
+      rect = parent.getBoundingClientRect(),
+      dividerRect = divider.getBoundingClientRect(),
+      gap = Number.parseFloat(getComputedStyle(parent).gap) || 0,
+      extent =
+        (node.direction === 'row'
+          ? rect.width - dividerRect.width
+          : rect.height - dividerRect.height) -
+        2 * gap,
+      start = node.direction === 'row' ? event.clientX : event.clientY,
+      pointerId = event.pointerId,
+      initialRatio = node.ratio
+    if (extent <= 0) return
     const move = (moveEvent: globalThis.PointerEvent) => {
-      const state = resizing.current
-      if (!state) return
-      const ratio =
-        state.direction === 'row'
-          ? (moveEvent.clientX - state.rect.left) / state.rect.width
-          : (moveEvent.clientY - state.rect.top) / state.rect.height
-      onWorkspaceChange({ ...workspace, root: updateSplit(workspace.root, state.id, ratio) })
+      if (moveEvent.pointerId !== pointerId) return
+      const current = workspaceRef.current,
+        coordinate = node.direction === 'row' ? moveEvent.clientX : moveEvent.clientY,
+        ratio = initialRatio + (coordinate - start) / extent
+      applyWorkspace({ ...current, root: updateSplit(current.root, node.id, ratio) })
     }
-    const end = () => {
-      resizing.current = null
+    const cleanup = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('blur', cleanup)
+      divider.removeEventListener('lostpointercapture', end)
+      resizeCleanup.current = null
+      if (divider.hasPointerCapture?.(pointerId)) divider.releasePointerCapture?.(pointerId)
     }
+    const end = (endEvent: globalThis.PointerEvent) => {
+      if (endEvent.pointerId === pointerId) cleanup()
+    }
+    resizeCleanup.current = cleanup
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    window.addEventListener('blur', cleanup)
+    divider.addEventListener('lostpointercapture', end)
+    try {
+      divider.setPointerCapture(pointerId)
+    } catch {
+      // 窗口级监听仍可在不支持指针捕获的浏览器中处理拖动。
+    }
     event.preventDefault()
+  }
+  const resizeByKey = (
+    event: KeyboardEvent<HTMLDivElement>,
+    node: Extract<WorkspaceNode, { type: 'split' }>,
+  ) => {
+    const backward = node.direction === 'row' ? 'ArrowLeft' : 'ArrowUp',
+      forward = node.direction === 'row' ? 'ArrowRight' : 'ArrowDown'
+    if (![backward, forward, 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const current = workspaceRef.current,
+      ratio =
+        event.key === 'Home'
+          ? 0.15
+          : event.key === 'End'
+            ? 0.85
+            : node.ratio + (event.key === forward ? 1 : -1) * (event.shiftKey ? 0.1 : 0.02)
+    applyWorkspace({ ...current, root: updateSplit(current.root, node.id, ratio) })
   }
   const dropPlacement = (event: DragEvent<HTMLElement>, paneId: string) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -377,13 +727,31 @@ export function Workspace({
     }
   }
   const handleDragOver = (event: DragEvent<HTMLElement>, paneId: string) => {
+    if (event.dataTransfer.types.includes(PANE_DRAG_TYPE)) {
+      if (!draggingPane.current || draggingPane.current === paneId || fullscreen) {
+        setDropTarget(null)
+        return
+      }
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      setDropTarget({ type: 'pane', paneId })
+      return
+    }
     if (!event.dataTransfer.types.includes('text/x-mindme-map')) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
-    setDropTarget(dropPlacement(event, paneId))
+    setDropTarget({ type: 'map', ...dropPlacement(event, paneId) })
   }
   const handleDrop = (event: DragEvent<HTMLElement>, paneId: string) => {
     event.preventDefault()
+    if (event.dataTransfer.types.includes(PANE_DRAG_TYPE)) {
+      const source = event.dataTransfer.getData(PANE_DRAG_TYPE)
+      setDropTarget(null)
+      if (source && source === draggingPane.current && source !== paneId && !fullscreen)
+        pendingPaneDrop.current = { source, target: paneId }
+      return
+    }
+    if (!event.dataTransfer.types.includes('text/x-mindme-map')) return
     const mapId = event.dataTransfer.getData('text/x-mindme-map')
     const target = dropPlacement(event, paneId)
     setDropTarget(null)
@@ -394,6 +762,8 @@ export function Workspace({
   useEffect(() => {
     return () => {
       pendingDrop.current = null
+      pendingPaneDrop.current = null
+      draggingPane.current = null
     }
   }, [])
   useEffect(() => {
@@ -422,8 +792,8 @@ export function Workspace({
           className={`workspace-split ${node.direction}`}
           style={
             {
-              '--workspace-first': `${node.ratio * 100}%`,
-              '--workspace-second': `${(1 - node.ratio) * 100}%`,
+              '--workspace-first': `${node.ratio}fr`,
+              '--workspace-second': `${1 - node.ratio}fr`,
             } as CSSProperties
           }
         >
@@ -431,8 +801,15 @@ export function Workspace({
           <div
             className="workspace-divider"
             role="separator"
+            tabIndex={0}
+            aria-label={node.direction === 'row' ? '左右分区大小' : '上下分区大小'}
             aria-orientation={node.direction === 'row' ? 'vertical' : 'horizontal'}
-            onPointerDown={(event) => beginResize(event, node.id, node.direction)}
+            aria-valuemin={15}
+            aria-valuemax={85}
+            aria-valuenow={Math.round(node.ratio * 100)}
+            aria-valuetext={`${Math.round(node.ratio * 100)}%`}
+            onPointerDown={(event) => beginResize(event, node)}
+            onKeyDown={(event) => resizeByKey(event, node)}
           />
           <div className="workspace-child">{render(node.second)}</div>
         </div>
@@ -443,7 +820,8 @@ export function Workspace({
     const selection = workspace.activePaneId === pane.id ? activeSelection : pane.selection
     return (
       <section
-        className={`workspace-pane ${workspace.activePaneId === pane.id ? 'active' : ''} ${dropTarget?.paneId === pane.id ? `drop-${dropTarget.placement}-${dropTarget.direction}` : ''}`}
+        className={`workspace-pane ${workspace.activePaneId === pane.id ? 'active' : ''} ${dropTarget?.paneId === pane.id ? (dropTarget.type === 'pane' ? 'drop-swap' : `drop-${dropTarget.placement}-${dropTarget.direction}`) : ''} ${fullscreen?.paneId === pane.id && fullscreen.mode === 'viewport' ? 'viewport-fullscreen' : ''}`}
+        data-pane-id={pane.id}
         onPointerDownCapture={() => onActivate(pane.id)}
         onDragOver={(event) => handleDragOver(event, pane.id)}
         onDragLeave={(event) => {
@@ -452,11 +830,35 @@ export function Workspace({
         onDrop={(event) => handleDrop(event, pane.id)}
       >
         <PaneHeader
+          key={pane.id}
           pane={pane}
           map={map}
           maps={maps}
           onChange={(patch) => updatePane(pane.id, patch)}
           active={workspace.activePaneId === pane.id}
+          canReorder={leafCount(workspace.root) > 1 && !fullscreen}
+          onDragStart={(event) => {
+            if (touchDragCleanup.current) {
+              event.preventDefault()
+              return
+            }
+            draggingPane.current = pane.id
+            pendingPaneDrop.current = null
+            event.dataTransfer.setData(PANE_DRAG_TYPE, pane.id)
+            event.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => {
+            const pending = pendingPaneDrop.current
+            pendingPaneDrop.current = null
+            draggingPane.current = null
+            setDropTarget(null)
+            if (pending) swapPanes(pending.source, pending.target)
+          }}
+          onGripPointerDown={(event) => beginTouchPaneDrag(event, pane.id)}
+          onMove={(direction) => movePane(pane.id, direction)}
+          fullscreenMode={fullscreen?.paneId === pane.id ? fullscreen.mode : undefined}
+          saveState={saveState}
+          retrySave={save}
         />
         <div className="workspace-pane-content">
           <PaneActions
@@ -464,6 +866,10 @@ export function Workspace({
             paneCount={leafCount(workspace.root)}
             onSplit={(direction) => split(pane.id, direction, { type: 'copy' })}
             onRemove={() => close(pane.id)}
+            fullscreen={fullscreen?.paneId === pane.id}
+            fullscreenMode={fullscreen?.paneId === pane.id ? fullscreen.mode : undefined}
+            canFullscreen={!!map || fullscreen?.paneId === pane.id}
+            onFullscreen={() => void toggleFullscreen(pane.id)}
           />
           {map ? (
             <Canvas
@@ -493,16 +899,27 @@ export function Workspace({
               editRequest={workspace.activePaneId === pane.id ? editRequest : 0}
               focusRequest={workspace.activePaneId === pane.id ? focusRequest : 0}
               fitRequest={fitRequests[pane.id] ?? 0}
+              exitFullscreen={
+                fullscreen?.paneId === pane.id ? () => void toggleFullscreen(pane.id) : undefined
+              }
             />
           ) : (
             <div className="workspace-pane-empty">请选择脑图</div>
+          )}
+          {fullscreen?.paneId === pane.id && notification && (
+            <div className="workspace-fullscreen-toast" role="status">
+              <span>{notification}</span>
+              <button aria-label="关闭提示" onClick={closeNotification}>
+                <X size={12} />
+              </button>
+            </div>
           )}
         </div>
       </section>
     )
   }
   return (
-    <div className="workspace-layout" data-testid="workspace-layout">
+    <div className="workspace-layout" data-testid="workspace-layout" ref={rootRef}>
       {render(workspace.root)}
     </div>
   )

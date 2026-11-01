@@ -40,6 +40,7 @@ interface Props {
   editRequest: number
   focusRequest: number
   fitRequest: number
+  exitFullscreen?: () => void
 }
 function scopedMap(map: MindMap, scopeNodeId: string | null | undefined): MapContent {
   if (!scopeNodeId || scopeNodeId === map.rootId || !map.nodes[scopeNodeId]) return map
@@ -86,6 +87,7 @@ export function Canvas({
   editRequest,
   focusRequest,
   fitRequest,
+  exitFullscreen,
 }: Props) {
   const selectedId = selection.activeId,
     selectedIds = useMemo(() => new Set(selection.ids), [selection.ids])
@@ -303,7 +305,7 @@ export function Canvas({
     }
   }, [edit?.id, selectedId])
   const finishEdit = useCallback(
-    async (cancel = false) => {
+    async (cancel = false, returnFocus = true) => {
       if (!edit || finishing.current || composing.current) return
       finishing.current = true
       let pending: Promise<unknown> | undefined
@@ -318,7 +320,7 @@ export function Canvas({
         pending = appStore.editorDraft(null)
       }
       setEdit(null)
-      container.current?.focus()
+      if (returnFocus) container.current?.focus()
       try {
         await pending
       } catch {
@@ -422,7 +424,13 @@ export function Canvas({
       moveSelection(key.slice(5) as Direction)
       return
     }
-    if (key === 'escape') select(null)
+    if (key === 'escape') {
+      if (exitFullscreen) {
+        event.preventDefault()
+        event.stopPropagation()
+        exitFullscreen()
+      } else select(null)
+    }
     if (action) {
       event.preventDefault()
       void command(action).catch(() => undefined)
@@ -797,7 +805,7 @@ export function Canvas({
                       onCompositionEnd={() => {
                         composing.current = false
                       }}
-                      onBlur={() => void finishEdit()}
+                      onBlur={() => void finishEdit(false, false)}
                       onPointerDown={(event) => event.stopPropagation()}
                       onKeyDown={(event) => {
                         if (!editing) {

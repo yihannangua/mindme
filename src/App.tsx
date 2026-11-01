@@ -1080,6 +1080,9 @@ export default function App() {
               editRequest={editRequest}
               focusRequest={focusRequest}
               fitRequests={fitRequests}
+              saveState={state}
+              notification={toast}
+              closeNotification={() => setToast('')}
             />
           ) : (
             <div className="empty-canvas">
