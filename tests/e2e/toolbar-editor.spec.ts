@@ -166,3 +166,78 @@ test('Command 方括号独立切换左右侧栏、保留多选，输入和组合
   await page.keyboard.press('Meta+[')
   await expect(left).toBeVisible()
 })
+
+test('左右侧栏通过按钮和快捷键切换后刷新，各自恢复四种状态', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  const left = page.getByLabel('脑图列表', { exact: true })
+  const right = page.getByLabel('节点属性', { exact: true })
+  const check = async (leftOpen: boolean, rightOpen: boolean) => {
+    await expect(node(page, '我的第一个脑图')).toBeVisible()
+    if (leftOpen) await expect(left).toBeVisible()
+    else await expect(left).toBeHidden()
+    if (rightOpen) await expect(right).toBeVisible()
+    else await expect(right).toBeHidden()
+    await expect(
+      page.getByRole('button', { name: `${leftOpen ? '收起' : '展开'}脑图列表`, exact: true }),
+    ).toHaveAttribute('aria-expanded', String(leftOpen))
+    await expect(
+      page.getByRole('button', { name: `${rightOpen ? '收起' : '展开'}节点面板`, exact: true }),
+    ).toHaveAttribute('aria-expanded', String(rightOpen))
+  }
+  await check(true, true)
+  await page.reload()
+  await check(true, true)
+  await page.getByRole('button', { name: '收起脑图列表', exact: true }).click()
+  await page.reload()
+  await check(false, true)
+  await page.keyboard.press('Meta+]')
+  await page.reload()
+  await check(false, false)
+  await page.getByRole('button', { name: '展开脑图列表', exact: true }).click()
+  await page.reload()
+  await check(true, false)
+  await page.keyboard.press('Control+]')
+  await page.reload()
+  await check(true, true)
+  await page.keyboard.press('Meta+[')
+  await page.reload()
+  await check(false, true)
+  await page.keyboard.press('Meta+[')
+  await page.getByRole('button', { name: '收起节点面板', exact: true }).click()
+  await page.reload()
+  await check(true, false)
+  await page.getByRole('button', { name: '展开节点面板', exact: true }).click()
+  await page.reload()
+  await check(true, true)
+  expect(errors).toEqual([])
+})
+
+test('侧栏偏好存储不可用时仍可操作，刷新回退默认展开', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.addInitScript(() => {
+    const getItem = Storage.prototype.getItem
+    const setItem = Storage.prototype.setItem
+    Storage.prototype.getItem = function (key) {
+      if (key === 'mindme.sidebar.v1') throw new Error('存储被禁用')
+      return getItem.call(this, key)
+    }
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'mindme.sidebar.v1') throw new Error('存储额度不足')
+      return setItem.call(this, key, value)
+    }
+  })
+  await page.goto('/')
+  await expect(node(page, '我的第一个脑图')).toBeVisible()
+  await page.getByRole('button', { name: '收起脑图列表', exact: true }).click()
+  await page.keyboard.press('Meta+]')
+  await expect(page.getByLabel('脑图列表', { exact: true })).toBeHidden()
+  await expect(page.getByLabel('节点属性', { exact: true })).toBeHidden()
+  await page.reload()
+  await expect(node(page, '我的第一个脑图')).toBeVisible()
+  await expect(page.getByLabel('脑图列表', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('节点属性', { exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})

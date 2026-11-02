@@ -37,6 +37,7 @@ import type { Command } from './domain/commands'
 import { createMap, uniqueName } from './domain/model'
 import { clone, MARKERS, type MarkerCategory, type NodeFont, type Space } from './domain/types'
 import { editorState } from './persistence/editor-state'
+import { sidebarState } from './persistence/sidebar-state'
 import { frequentMarkers, markerLabel, markerUsageStorage } from './persistence/marker-usage'
 import { restoreSelection, retainSelection, singleSelection } from './editor/selection'
 import { Workspace } from './workspace/Workspace'
@@ -92,9 +93,15 @@ export default function App() {
     [selection, setSelection] = useState(() => restoreSelection(editorState.map(activeId))),
     [workspace, setWorkspace] = useState<WorkspaceState>(
       () => initialWorkspace.current ?? defaultWorkspace(activeId),
-    ),
-    [left, setLeft] = useState(true),
-    [right, setRight] = useState(true)
+    )
+  const [sidebarVisibility, setSidebarVisibility] = useState(() => sidebarState.load())
+  const { left, right } = sidebarVisibility
+  const toggleSidebar = useCallback((side: 'left' | 'right') => {
+    setSidebarVisibility((current) => ({ ...current, [side]: !current[side] }))
+  }, [])
+  useLayoutEffect(() => {
+    sidebarState.save(sidebarVisibility)
+  }, [sidebarVisibility])
   const [markerUsage, setMarkerUsage] = useState(() => markerUsageStorage.load())
   const selectedId = selection.activeId
   const setSelectedId = useCallback((id: string | null) => setSelection(singleSelection(id)), [])
@@ -734,15 +741,14 @@ export default function App() {
       if (!side) return
       event.preventDefault()
       event.stopPropagation()
-      if (side === 'left') setLeft((open) => !open)
-      else setRight((open) => !open)
+      toggleSidebar(side)
       // 关闭侧栏后让键盘可继续操作当前画布，保留选择与视角。
       if (target instanceof HTMLElement && target.closest('aside'))
         setFocusRequest((request) => request + 1)
     }
     window.addEventListener('keydown', onSidebarShortcut, true)
     return () => window.removeEventListener('keydown', onSidebarShortcut, true)
-  }, [dialog])
+  }, [dialog, toggleSidebar])
   if (!state.snapshot)
     return (
       <main className="boot">
@@ -974,7 +980,7 @@ export default function App() {
               aria-label={left ? '收起脑图列表' : '展开脑图列表'}
               title="脑图列表 ⌘["
               aria-expanded={left}
-              onClick={() => setLeft((open) => !open)}
+              onClick={() => toggleSidebar('left')}
             >
               {left ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
@@ -1055,7 +1061,7 @@ export default function App() {
                 aria-label={right ? '收起节点面板' : '展开节点面板'}
                 title="节点面板 ⌘]"
                 aria-expanded={right}
-                onClick={() => setRight((open) => !open)}
+                onClick={() => toggleSidebar('right')}
               >
                 {right ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
               </button>
