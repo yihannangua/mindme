@@ -166,6 +166,21 @@ describe('领域命令与不变量', () => {
     space = edit(space, { type: 'fold', nodeId: root, recursive: true })
     expect(first(space).nodes[a].collapsed).toBe(false)
   })
+  it('全部折叠覆盖所有分支节点，全部展开恢复', () => {
+    let space = seed(),
+      root = first(space).rootId
+    space = edit(space, { type: 'add', nodeId: root, kind: 'child' })
+    const a = children(first(space), root)[0].id
+    space = edit(space, { type: 'add', nodeId: a, kind: 'child' })
+    space = edit(space, { type: 'fold-all', value: true })
+    expect(first(space).nodes[root].collapsed).toBe(true)
+    expect(first(space).nodes[a].collapsed).toBe(true)
+    space = edit(space, { type: 'fold-all' })
+    expect(first(space).nodes[root].collapsed).toBe(false)
+    expect(first(space).nodes[a].collapsed).toBe(false)
+    space = edit(space, { type: 'fold-all' })
+    expect(first(space).nodes[root].collapsed).toBe(true)
+  })
   it('撤销只回退本机字段，保留远端标记和位置', () => {
     let source = seed(),
       root = first(source).rootId

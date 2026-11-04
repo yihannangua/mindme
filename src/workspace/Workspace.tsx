@@ -7,13 +7,25 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react'
-import { Columns2, GripVertical, Maximize2, Minimize2, Rows2, X } from 'lucide-react'
+import {
+  Columns2,
+  CornerDownRight,
+  GripVertical,
+  Maximize2,
+  Minimize2,
+  Redo2,
+  Rows2,
+  Undo2,
+  X,
+} from 'lucide-react'
 import type { ViewState } from '../app/store'
 import type { Command } from '../domain/commands'
-import type { MindMap, Space } from '../domain/types'
+import type { MarkerCategory, MindMap, Space } from '../domain/types'
 import type { ImportDraft } from '../importers/outline'
+import { MarkerIcon } from '../components/MarkerIcon'
 import { Canvas } from '../editor/Canvas'
 import { singleSelection, type NodeSelection } from '../editor/selection'
+import { frequentMarkers, markerLabel, type MarkerUsage } from '../persistence/marker-usage'
 import {
   clampRatio,
   swapPanePositions,
@@ -46,6 +58,11 @@ interface Props {
   saveState: Pick<ViewState, 'status' | 'pendingTasks' | 'error'>
   notification: string
   closeNotification: () => void
+  canUndo: boolean
+  canRedo: boolean
+  markerUsage: MarkerUsage[]
+  onMarker: (category: MarkerCategory, value: string) => void
+  onFit: (paneId: string) => void
 }
 
 function replacePane(
@@ -373,6 +390,11 @@ export function Workspace({
   saveState,
   notification,
   closeNotification,
+  canUndo,
+  canRedo,
+  markerUsage,
+  onMarker,
+  onFit,
 }: Props) {
   const workspaceRef = useRef(workspace),
     saveStateRef = useRef(saveState),
@@ -785,6 +807,29 @@ export function Workspace({
     window.addEventListener('mindme-tab-dragend', finishDrop)
     return () => window.removeEventListener('mindme-tab-dragend', finishDrop)
   }, [space, workspace, onWorkspaceChange])
+  const runPaneCommand = (
+    paneId: string,
+    mapId: string,
+    action: Command,
+    selection: NodeSelection,
+  ) => {
+    if (
+      selection.ids.length > 1 &&
+      ![
+        'delete-many',
+        'fold',
+        'fold-all',
+        'layout',
+        'reparent-many',
+        'marker-many',
+        'style-many',
+      ].includes(action.type)
+    )
+      onSelection(paneId, singleSelection(selection.activeId))
+    return onCommand(mapId, action, (id) => {
+      if (id) onSelection(paneId, singleSelection(id))
+    })
+  }
   const render = (node: WorkspaceNode): ReactNode => {
     if (node.type === 'split')
       return (
@@ -818,6 +863,9 @@ export function Workspace({
       map = pane ? space.maps[pane.mapId] : undefined
     if (!pane) return null
     const selection = workspace.activePaneId === pane.id ? activeSelection : pane.selection
+    const activeNode = selection.activeId ? map?.nodes[selection.activeId] : undefined
+    const fullscreenActive = fullscreen?.paneId === pane.id
+    const fullscreenMarkers = frequentMarkers(markerUsage)
     return (
       <section
         className={`workspace-pane ${workspace.activePaneId === pane.id ? 'active' : ''} ${dropTarget?.paneId === pane.id ? (dropTarget.type === 'pane' ? 'drop-swap' : `drop-${dropTarget.placement}-${dropTarget.direction}`) : ''} ${fullscreen?.paneId === pane.id && fullscreen.mode === 'viewport' ? 'viewport-fullscreen' : ''}`}
@@ -860,6 +908,135 @@ export function Workspace({
           saveState={saveState}
           retrySave={save}
         />
+        {fullscreenActive && map && (
+          <div className="workspace-fullscreen-toolbar" role="toolbar" aria-label="全屏画布操作">
+            <button
+              disabled={!activeNode}
+              onClick={() => {
+                if (!activeNode) return
+                void runPaneCommand(
+                  pane.id,
+                  map.id,
+                  { type: 'add', nodeId: activeNode.id, kind: 'child' },
+                  selection,
+                ).catch(() => undefined)
+              }}
+            >
+              ＋ 子主题
+            </button>
+            <button
+              disabled={!activeNode?.parentId}
+              onClick={() => {
+                if (!activeNode) return
+                void runPaneCommand(
+                  pane.id,
+                  map.id,
+                  { type: 'add', nodeId: activeNode.id, kind: 'sibling' },
+                  selection,
+                ).catch(() => undefined)
+              }}
+            >
+              ＋ 同级主题
+            </button>
+            <i />
+            <button
+              disabled={!activeNode}
+              onClick={() => {
+                if (!activeNode) return
+                void runPaneCommand(
+                  pane.id,
+                  map.id,
+                  { type: 'fold', nodeId: activeNode.id },
+                  selection,
+                ).catch(() => undefined)
+              }}
+            >
+              折叠 / 展开
+            </button>
+            <button
+              disabled={!map}
+              title={activeNode ? '折叠或展开选中节点的整个子树' : '未选中节点时折叠或展开整张脑图'}
+              onClick={() => {
+                const action: Command = activeNode
+                  ? { type: 'fold', nodeId: activeNode.id, recursive: true }
+                  : { type: 'fold-all' }
+                void runPaneCommand(pane.id, map.id, action, selection)
+                  .then(() => onFit(pane.id))
+                  .catch(() => undefined)
+              }}
+            >
+              全部折叠 / 展开
+            </button>
+            <button
+              disabled={!activeNode?.parentId || pane.scopeNodeId === activeNode.id}
+              onClick={() => {
+                if (!activeNode?.parentId) return
+                updatePane(pane.id, {
+                  scopeNodeId: activeNode.id,
+                  selection: singleSelection(activeNode.id),
+                })
+                onFit(pane.id)
+              }}
+            >
+              <CornerDownRight size={14} />
+              下钻
+            </button>
+            <button
+              disabled={!map}
+              onClick={() => {
+                void runPaneCommand(pane.id, map.id, { type: 'layout' }, selection)
+                  .then(() => {
+                    onFit(pane.id)
+                    notify('已均衡布局')
+                  })
+                  .catch(() => undefined)
+              }}
+            >
+              自动布局
+            </button>
+            <i />
+            <button
+              aria-label="撤销"
+              title="撤销 ⌘Z"
+              disabled={!canUndo}
+              onClick={() => onHistory(map.id, 'undo')}
+            >
+              <Undo2 size={15} />
+            </button>
+            <button
+              aria-label="重做"
+              title="重做 ⇧⌘Z"
+              disabled={!canRedo}
+              onClick={() => onHistory(map.id, 'redo')}
+            >
+              <Redo2 size={15} />
+            </button>
+            {fullscreenMarkers.length > 0 && (
+              <div className="frequent-markers" role="group" aria-label="常用图标">
+                <i aria-hidden="true" />
+                {fullscreenMarkers.map(({ category, value, count }) => {
+                  const pressed =
+                    selection.ids.length > 0 &&
+                    selection.ids.every((id) => map.nodes[id]?.markers[category] === value)
+                  return (
+                    <button
+                      key={`${category}:${value}`}
+                      aria-label={`常用图标：${markerLabel(category, value)}`}
+                      title={`${markerLabel(category, value)} · 已使用 ${count} 次`}
+                      aria-pressed={pressed}
+                      disabled={!activeNode}
+                      onClick={() => onMarker(category, value)}
+                    >
+                      <svg width="20" height="20">
+                        <MarkerIcon category={category} value={value} />
+                      </svg>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <div className="workspace-pane-content">
           <PaneActions
             paneId={pane.id}

@@ -22,6 +22,7 @@ export type Command =
   | { type: 'sort'; nodeId: string; delta: -1 | 1 }
   | { type: 'move'; nodeId: string; position: { x: number; y: number }; side?: -1 | 1 }
   | { type: 'fold'; nodeId: string; recursive?: boolean; value?: boolean }
+  | { type: 'fold-all'; value?: boolean }
   | { type: 'marker'; nodeId: string; category: MarkerCategory; value: string }
   | { type: 'marker-many'; nodeIds: string[]; category: MarkerCategory; value: string }
   | {
@@ -183,6 +184,15 @@ export function execute(
       const value =
         command.value ??
         (command.recursive ? !ids.some((id) => map.nodes[id].collapsed) : !node!.collapsed)
+      for (const id of ids) map.nodes[id].collapsed = value
+      break
+    }
+    case 'fold-all': {
+      const ids = Object.values(map.nodes)
+        .filter((item) => children(map, item.id).length > 0)
+        .map((item) => item.id)
+      if (!ids.length) break
+      const value = command.value ?? !ids.every((id) => map.nodes[id].collapsed)
       for (const id of ids) map.nodes[id].collapsed = value
       break
     }

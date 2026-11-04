@@ -366,6 +366,15 @@ export default function App() {
       notify('已均衡布局')
     })
   }
+  const foldAll = () => {
+    if (!map) return
+    void guard(async () => {
+      await command(
+        node ? { type: 'fold', nodeId: node.id, recursive: true } : { type: 'fold-all' },
+      )
+      requestFit(workspace.activePaneId)
+    })
+  }
   const drillDown = () => {
     if (!map || !node || !node.parentId || activePane?.scopeNodeId === node.id) return
     setWorkspace((current) => {
@@ -1002,6 +1011,13 @@ export default function App() {
               折叠 / 展开
             </button>
             <button
+              disabled={!map}
+              title={node ? '折叠或展开选中节点的整个子树' : '未选中节点时折叠或展开整张脑图'}
+              onClick={foldAll}
+            >
+              全部折叠 / 展开
+            </button>
+            <button
               disabled={!node || !node.parentId || activePane?.scopeNodeId === node.id}
               title="以下方选中节点为中心，只显示它下面的内容"
               onClick={drillDown}
@@ -1077,6 +1093,11 @@ export default function App() {
               onSelection={paneSelection}
               onCommand={commandForMap}
               onHistory={(mapId, direction) => void guard(() => appStore.history(mapId, direction))}
+              canUndo={state.canUndo}
+              canRedo={state.canRedo}
+              markerUsage={markerUsage}
+              onMarker={(category, value) => applyMarker(category, value, true)}
+              onFit={requestFit}
               paste={paste}
               save={save}
               notify={notify}
