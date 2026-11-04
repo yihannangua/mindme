@@ -551,3 +551,75 @@ test('本地保存失败时不交换画布，恢复保存后文字仍可找回',
   await page.reload()
   await expect(node(panes(page).first(), '未保存的编辑内容')).toBeVisible()
 })
+
+test('全屏工具栏提供子主题、同级、折叠、下钻、布局、撤销重做和常用图标', async ({ page }) => {
+  await page.goto('/')
+  const pane = panes(page).first(),
+    target = node(pane, '想要探索的事')
+  await target.click()
+  await page.getByRole('button', { name: '旗子 blue', exact: true }).click()
+  // 全屏内 Esc 用于退出全屏，先在普通状态取消选择，验证未选中时的整图折叠。
+  await page.getByLabel('脑图画布', { exact: true }).press('Escape')
+  await expect(page.locator('.mind-node.selected')).toHaveCount(0)
+  await pane.getByRole('button', { name: '全屏显示当前画布', exact: true }).click()
+  const toolbar = pane.getByRole('toolbar', { name: '全屏画布操作', exact: true })
+  await expect(toolbar).toBeVisible()
+  const foldAll = toolbar.getByRole('button', { name: '全部折叠 / 展开', exact: true })
+  await expect(foldAll).toBeEnabled()
+  await expect(toolbar.getByRole('button', { name: '自动布局', exact: true })).toBeEnabled()
+  await expect(toolbar.getByRole('button', { name: '＋ 子主题', exact: true })).toBeDisabled()
+  await expect(toolbar.getByRole('button', { name: '＋ 同级主题', exact: true })).toBeDisabled()
+  await expect(toolbar.getByRole('button', { name: '折叠 / 展开', exact: true })).toBeDisabled()
+  await expect(toolbar.getByRole('button', { name: '下钻', exact: true })).toBeDisabled()
+  await expect(toolbar.getByRole('button', { name: '撤销', exact: true })).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: '重做', exact: true })).toBeVisible()
+  const favorite = toolbar.getByRole('button', {
+    name: '常用图标：旗子 blue',
+    exact: true,
+  })
+  await expect(favorite).toBeVisible()
+
+  await foldAll.click()
+  await expect(node(pane, '想要探索的事')).toHaveCount(0)
+  await expect(node(pane, '值得记住的事')).toHaveCount(0)
+  await foldAll.click()
+  await expect(node(pane, '想要探索的事')).toBeVisible()
+  await expect(node(pane, '值得记住的事')).toBeVisible()
+
+  await node(pane, '想要探索的事').click()
+  for (const name of ['＋ 子主题', '＋ 同级主题', '折叠 / 展开', '下钻'])
+    await expect(toolbar.getByRole('button', { name, exact: true })).toBeEnabled()
+  await toolbar.getByRole('button', { name: '＋ 子主题', exact: true }).click()
+  const added = node(pane, '新主题')
+  await expect(added).toBeVisible()
+  await expect(added).toHaveClass(/selected/)
+  await toolbar.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(added).toHaveCount(0)
+  await toolbar.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(added).toBeVisible()
+
+  await node(pane, '想要探索的事').click()
+  await foldAll.click()
+  await expect(added).toHaveCount(0)
+  await expect(node(pane, '值得记住的事')).toBeVisible()
+  await foldAll.click()
+  await expect(added).toBeVisible()
+
+  await added.click()
+  await favorite.click()
+  await expect(added.locator('svg')).toHaveCount(1)
+
+  await node(pane, '想要探索的事').click()
+  await toolbar.getByRole('button', { name: '折叠 / 展开', exact: true }).click()
+  await expect(pane.getByRole('button', { name: '展开 想要探索的事', exact: true })).toBeVisible()
+  await toolbar.getByRole('button', { name: '折叠 / 展开', exact: true }).click()
+  await expect(pane.getByRole('button', { name: '折叠 想要探索的事', exact: true })).toBeVisible()
+
+  await toolbar.getByRole('button', { name: '下钻', exact: true }).click()
+  await expect(
+    pane.getByRole('button', { name: '返回到我的第一个脑图', exact: true }),
+  ).toBeVisible()
+
+  await toolbar.getByRole('button', { name: '自动布局', exact: true }).click()
+  await expect(pane.locator('.workspace-fullscreen-toast')).toContainText('已均衡布局')
+})

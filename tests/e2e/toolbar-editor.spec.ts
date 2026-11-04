@@ -241,3 +241,41 @@ test('侧栏偏好存储不可用时仍可操作，刷新回退默认展开', as
   await expect(page.getByLabel('节点属性', { exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('全部折叠 / 展开优先作用于选中节点，未选中时作用于整张脑图', async ({ page }) => {
+  await page.goto('/')
+  const root = node(page, '我的第一个脑图'),
+    branch = node(page, '想要探索的事'),
+    other = node(page, '值得记住的事'),
+    toggle = page.getByRole('button', { name: '全部折叠 / 展开', exact: true })
+  await expect(root).toBeVisible()
+  await expect(branch).toBeVisible()
+  await expect(other).toBeVisible()
+
+  await branch.click()
+  await page.keyboard.press('Tab')
+  const child = node(page, '新主题')
+  await expect(child).toBeVisible()
+  await branch.click()
+  await toggle.click()
+  await expect(child).toHaveCount(0)
+  await expect(other).toBeVisible()
+  await expect(root).toBeVisible()
+  await toggle.click()
+  await expect(child).toBeVisible()
+
+  await page.getByLabel('脑图画布', { exact: true }).press('Escape')
+  await toggle.click()
+  await expect(branch).toHaveCount(0)
+  await expect(other).toHaveCount(0)
+  await expect(root).toBeVisible()
+  await toggle.click()
+  await expect(branch).toBeVisible()
+  await expect(other).toBeVisible()
+
+  await toggle.click()
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(branch).toBeVisible()
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(branch).toHaveCount(0)
+})
