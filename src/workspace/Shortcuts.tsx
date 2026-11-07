@@ -45,6 +45,7 @@ export const shortcutGroups = [
     shortcuts: [
       { key: '⌘ [', action: '展开 / 收起左侧脑图列表' },
       { key: '⌘ ]', action: '展开 / 收起右侧节点面板' },
+      { key: 'Home', action: '进入 / 退出当前画布全屏' },
       { key: '滚轮', action: '以鼠标位置缩放画布' },
       { key: '空白处按住左键拖动', action: '平移画布' },
     ],
