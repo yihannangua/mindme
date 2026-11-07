@@ -623,3 +623,19 @@ test('全屏工具栏提供子主题、同级、折叠、下钻、布局、撤�
   await toolbar.getByRole('button', { name: '自动布局', exact: true }).click()
   await expect(pane.locator('.workspace-fullscreen-toast')).toContainText('已均衡布局')
 })
+
+test('Home 进入和退出当前画布全屏，文字编辑时不拦截', async ({ page }) => {
+  await page.goto('/')
+  const pane = panes(page).first(),
+    canvas = page.getByLabel('脑图画布', { exact: true })
+  await canvas.press('Home')
+  await expect(pane.getByRole('button', { name: '退出画布全屏', exact: true })).toBeVisible()
+  await canvas.press('Home')
+  await expect(pane.getByRole('button', { name: '全屏显示当前画布', exact: true })).toBeVisible()
+
+  await node(pane, '我的第一个脑图').dblclick()
+  const input = page.getByLabel('编辑节点文字', { exact: true })
+  await expect(input).toBeFocused()
+  await input.press('Home')
+  await expect(pane.getByRole('button', { name: '全屏显示当前画布', exact: true })).toBeVisible()
+})

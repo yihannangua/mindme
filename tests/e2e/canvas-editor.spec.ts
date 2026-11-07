@@ -62,7 +62,7 @@ test('分区支持递归拆分、独立脑图范围和拖动分隔线，刷新�
   await expect(page.getByTestId('workspace-layout').locator('.workspace-pane')).toHaveCount(2)
   await page.getByRole('button', { name: '上下拆分画布', exact: true }).last().click()
   await expect(page.getByTestId('workspace-layout').locator('.workspace-pane')).toHaveCount(3)
-  await expect(page.getByRole('button', { name: /当前分区：/ })).toHaveCount(3)
+  await expect(page.getByLabel(/当前分区：/)).toHaveCount(3)
   const divider = page.getByRole('separator').first(),
     before = await divider.boundingBox()
   expect(before).toBeTruthy()
@@ -79,7 +79,7 @@ test('画布右上角拆分按钮复制当前画布，顶部标签只切换当�
   await node(page, '想要探索的事').click()
   await page.getByRole('button', { name: '左右拆分画布', exact: true }).click()
   await expect(page.getByTestId('workspace-layout').locator('.workspace-pane')).toHaveCount(2)
-  const summaries = page.getByRole('button', { name: /当前分区：/ })
+  const summaries = page.getByLabel(/当前分区：/)
   await expect(summaries).toHaveCount(2)
   await expect(summaries.first()).toContainText('整张脑图')
   await expect(summaries.last()).toContainText('整张脑图')
@@ -88,14 +88,19 @@ test('画布右上角拆分按钮复制当前画布，顶部标签只切换当�
   await expect(summaries.last()).toBeVisible()
 })
 
-test('分区内容菜单可清空当前画布，顶部标签可直接填入脑图', async ({ page }) => {
+test('左侧脑图拖到分区可替换内容，点击分区标题不再展开菜单', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: /当前分区：/ }).click()
-  await page.getByLabel('替换分区脑图').selectOption('')
-  await expect(page.getByText('请选择脑图', { exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: '我的第一个脑图', exact: true }).click()
-  await expect(node(page, '想要探索的事')).toBeVisible()
-  await expect(page.getByTestId('workspace-layout').locator('.workspace-pane')).toHaveCount(1)
+  await page.getByRole('button', { name: '新建脑图', exact: true }).click()
+  await page.getByLabel('脑图名称').fill('第二张脑图')
+  await page.getByRole('button', { name: '创建脑图', exact: true }).click()
+  await expect(node(page, '第二张脑图')).toBeVisible()
+  const pane = page.getByTestId('workspace-layout').locator('.workspace-pane').first()
+  await page.getByRole('button', { name: '我的第一个脑图', exact: true }).dragTo(pane)
+  await expect(pane.getByLabel(/当前分区：/)).toContainText('我的第一个脑图')
+  await expect(node(pane, '我的第一个脑图')).toBeVisible()
+  await pane.getByLabel(/当前分区：/).click()
+  await expect(page.getByRole('menu', { name: '分区操作' })).toHaveCount(0)
+  await expect(page.getByText('分区内容', { exact: true })).toHaveCount(0)
 })
 
 test('标签拖到画布后按落点拆分，关闭图标移除当前画布', async ({ page }) => {
@@ -210,7 +215,7 @@ test('下钻按钮以选中节点为中心，标题显示面包屑并可返回�
   await expect(rootBreadcrumb).toBeVisible()
   await rootBreadcrumb.click()
   await expect(page.locator('.workspace-pane-breadcrumbs')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /当前分区：.*整张脑图/ })).toBeVisible()
+  await expect(page.getByLabel(/当前分区：.*整张脑图/)).toBeVisible()
   await page.getByRole('button', { name: '节点 我的第一个脑图', exact: true }).click()
   await expect(page.getByRole('button', { name: '下钻', exact: true })).toBeDisabled()
 })

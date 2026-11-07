@@ -201,6 +201,118 @@ button.primary:hover {
 .section-label span {
   letter-spacing: 0;
 }
+.section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.new-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: #6f8190;
+  font-size: 10px;
+  cursor: pointer;
+}
+.new-group:hover {
+  color: #315d76;
+  background: #edf4f7;
+  border-radius: 4px;
+}
+.map-groups {
+  gap: 8px;
+}
+.map-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.map-group.drop-group {
+  background: #edf6fa;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px #9fc4d5;
+}
+.map-group-title {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 3px;
+}
+.map-group-title.ungrouped {
+  padding: 4px 8px;
+  color: #7b8992;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.map-group-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #607482;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+.map-group-toggle:hover {
+  color: #315d76;
+  background: #eef4f7;
+}
+.map-group-toggle span:not(.map-group-count) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-group-toggle svg {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+.map-group-toggle svg.open {
+  transform: rotate(90deg);
+}
+.map-group-count {
+  margin-left: auto;
+  color: #9aa7af;
+  font-size: 10px;
+  font-weight: 400;
+}
+.map-group-rename {
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: #8a9aa5;
+  opacity: 0.45;
+}
+.map-group-title:hover .map-group-rename,
+.map-group-rename:focus-visible {
+  opacity: 1;
+}
+.map-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 8px;
+}
+.map-group-items .file {
+  padding: 8px;
+  font-size: 11px;
+}
+.map-group-select {
+  width: 100%;
+  margin-bottom: 8px;
+}
 .map-search {
   display: flex;
   align-items: center;
@@ -518,7 +630,7 @@ button.primary:hover {
   color: #4f6674;
   background: transparent;
   border: 0;
-  cursor: pointer;
+  cursor: default;
   border-radius: 5px;
   padding: 3px 6px;
   font-size: 11px;
@@ -566,36 +678,6 @@ button.primary:hover {
 .workspace-pane-breadcrumb-separator {
   padding: 0 2px;
   color: #9aadb7;
-}
-.workspace-pane-menu {
-  position: absolute;
-  z-index: 20;
-  top: 31px;
-  left: 7px;
-  width: min(270px, calc(100% - 14px));
-  display: grid;
-  gap: 5px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  background: white;
-  box-shadow: 0 8px 24px #2936401c;
-}
-.workspace-pane-menu-title {
-  padding: 3px 2px;
-  color: var(--sub);
-  font-size: 10px;
-}
-.workspace-pane-menu select,
-.workspace-pane-menu button {
-  width: 100%;
-  min-width: 0;
-  height: 27px;
-  padding: 4px 7px;
-  font-size: 11px;
-  text-align: left;
-}
-.workspace-pane-menu button {
-  flex: 0 0 auto;
 }
 .workspace-pane-header {
   position: relative;
@@ -754,6 +836,20 @@ button.primary:hover {
   z-index: 4;
   border: 3px dashed #5f97b5;
   background: #78a9c72e;
+  pointer-events: none;
+}
+.workspace-pane.drop-map::after {
+  content: '释放以切换此分区脑图';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 3px dashed #5f97b5;
+  background: #78a9c72e;
+  color: #315d76;
+  font-size: 12px;
+  font-weight: 600;
   pointer-events: none;
 }
 .workspace-pane.drop-first-row::after,
