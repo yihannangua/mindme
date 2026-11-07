@@ -279,3 +279,75 @@ test('全部折叠 / 展开优先作用于选中节点，未选中时作用于�
   await page.getByRole('button', { name: '重做', exact: true }).click()
   await expect(branch).toHaveCount(0)
 })
+
+test('脑图分组支持新建、移动、折叠、重命名并在刷新后保留', async ({ page }) => {
+  await page.goto('/')
+  const mapButton = page.getByRole('button', { name: '我的第一个脑图', exact: true })
+  await expect(mapButton).toBeVisible()
+
+  await page.getByRole('button', { name: '新建分组', exact: true }).click()
+  const createDialog = page.getByRole('dialog')
+  await createDialog.getByLabel('分组名称', { exact: true }).fill('工作')
+  await createDialog.getByRole('button', { name: '创建分组', exact: true }).click()
+  await expect(page.getByRole('button', { name: '折叠分组 工作', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: '•••', exact: true }).click()
+  await page
+    .getByRole('dialog')
+    .getByLabel('移动脑图到分组', { exact: true })
+    .selectOption({ label: '工作' })
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(mapButton).toBeVisible()
+
+  await page.getByRole('button', { name: '折叠分组 工作', exact: true }).click()
+  await expect(page.getByRole('button', { name: '展开分组 工作', exact: true })).toBeVisible()
+  await expect(mapButton).toHaveCount(0)
+  await page.getByRole('button', { name: '展开分组 工作', exact: true }).click()
+  await expect(mapButton).toBeVisible()
+
+  await page.getByRole('button', { name: '重命名分组 工作', exact: true }).click()
+  const renameDialog = page.getByRole('dialog')
+  await renameDialog.getByLabel('分组名称', { exact: true }).fill('项目')
+  await renameDialog.getByRole('button', { name: '保存名称', exact: true }).click()
+  await expect(page.getByRole('button', { name: '折叠分组 项目', exact: true })).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: '折叠分组 项目', exact: true })).toBeVisible()
+  await expect(mapButton).toBeVisible()
+})
+
+test('左侧脑图拖到分组可变更所属分组，拖回未分组也生效', async ({ page }) => {
+  await page.goto('/')
+  const mapButton = page.getByRole('button', { name: '我的第一个脑图', exact: true })
+  const createGroup = async (name: string) => {
+    await page.getByRole('button', { name: '新建分组', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('分组名称', { exact: true }).fill(name)
+    await dialog.getByRole('button', { name: '创建分组', exact: true }).click()
+  }
+  await createGroup('工作')
+  await createGroup('生活')
+  const work = page.getByRole('group', { name: '分组 工作', exact: true }),
+    life = page.getByRole('group', { name: '分组 生活', exact: true }),
+    ungrouped = page.getByRole('group', { name: '未分组', exact: true })
+
+  await mapButton.dragTo(work)
+  await expect(work.getByRole('button', { name: '我的第一个脑图', exact: true })).toBeVisible()
+  await expect(ungrouped.getByRole('button', { name: '我的第一个脑图', exact: true })).toHaveCount(
+    0,
+  )
+
+  await mapButton.dragTo(life)
+  await expect(life.getByRole('button', { name: '我的第一个脑图', exact: true })).toBeVisible()
+  await expect(work.getByRole('button', { name: '我的第一个脑图', exact: true })).toHaveCount(0)
+
+  await mapButton.dragTo(ungrouped)
+  await expect(ungrouped.getByRole('button', { name: '我的第一个脑图', exact: true })).toBeVisible()
+
+  await page.reload()
+  await expect(
+    page
+      .getByRole('group', { name: '未分组', exact: true })
+      .getByRole('button', { name: '我的第一个脑图', exact: true }),
+  ).toBeVisible()
+})

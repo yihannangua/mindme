@@ -68,7 +68,7 @@ test('三组配图加载完整且有图注/替代文本，同步状态图准确�
 
   await nav.getByRole('button', { name: /^画布与分区/ }).click()
   const canvasImages = help.getByRole('article').locator('.help-illustration img')
-  await expect(canvasImages).toHaveCount(3)
+  await expect(canvasImages).toHaveCount(2)
   for (const image of await canvasImages.all()) {
     await image.scrollIntoViewIfNeeded()
     await expect
@@ -78,8 +78,7 @@ test('三组配图加载完整且有图注/替代文本，同步状态图准确�
       .toBe(true)
   }
   await expect(help.getByText('步骤 1：用分区右上角的拆分按钮复制当前视图。')).toBeVisible()
-  await expect(help.getByText('步骤 2：打开分区标题，选择脑图和要查看的节点范围。')).toBeVisible()
-  await expect(help.getByText('步骤 3：使用标题路径中的上层项目返回。')).toBeVisible()
+  await expect(help.getByText('步骤 2：使用标题路径中的上层项目返回。')).toBeVisible()
 
   await nav.getByRole('button', { name: /^保存、离线与同步/ }).click()
   const flow = help.getByRole('group', { name: '本机保存与云端同步状态图' })
@@ -162,7 +161,7 @@ test('窄屏帮助独立滚动，弹窗操作保留画布的内容、选择和�
   ).toBeInViewport()
   await nav.getByRole('button', { name: /^画布与分区/ }).click()
   const images = article.locator('.help-illustration img')
-  await expect(images).toHaveCount(3)
+  await expect(images).toHaveCount(2)
   for (const image of await images.all()) {
     await image.scrollIntoViewIfNeeded()
     const dimensions = await image.evaluate((element) => {
@@ -173,4 +172,21 @@ test('窄屏帮助独立滚动，弹窗操作保留画布的内容、选择和�
     expect(dimensions.imageWidth).toBeLessThanOrEqual(dimensions.articleWidth)
   }
   await page.screenshot({ path: testInfo.outputPath('使用指南-窄屏.png') })
+})
+
+test('帮助文档说明脑图分组和 Home 全屏', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '使用指南', exact: true }).click()
+  const help = page.getByRole('dialog'),
+    nav = help.getByRole('navigation', { name: '帮助栏目' })
+  await nav.getByRole('button', { name: /^多脑图管理/ }).click()
+  await expect(help.getByRole('heading', { name: '用分组整理脑图', exact: true })).toBeVisible()
+  await expect(
+    help.getByText(
+      '分组和折叠状态保存在当前浏览器，不会同步到其他设备；脑图内容和名称仍按原有方式同步。',
+    ),
+  ).toBeVisible()
+  await nav.getByRole('button', { name: /^画布与分区/ }).click()
+  await expect(help.getByText(/按 Home/)).toBeVisible()
+  await expect(help.getByText(/全屏后标题下方工具栏/)).toBeVisible()
 })

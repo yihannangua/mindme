@@ -34,6 +34,7 @@ import {
   type WorkspacePane,
   type WorkspaceState,
 } from '../persistence/workspace-state'
+import { MAP_TAB_DRAG_TYPE, PANE_MAP_DRAG_TYPE } from './drag-types'
 
 interface Props {
   space: Space
@@ -99,9 +100,6 @@ function removePane(root: WorkspaceNode, paneId: string): WorkspaceNode | null {
 function leafCount(node: WorkspaceNode): number {
   return node.type === 'pane' ? 1 : leafCount(node.first) + leafCount(node.second)
 }
-function nodeOptions(map: MindMap) {
-  return Object.values(map.nodes).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-}
 function scopePath(
   map: MindMap,
   scopeNodeId: string | null,
@@ -126,12 +124,12 @@ type PaneDirection = 'left' | 'right' | 'up' | 'down'
 type DropTarget =
   | { type: 'map'; paneId: string; direction: SplitDirection; placement: 'first' | 'second' }
   | { type: 'pane'; paneId: string }
+  | { type: 'pane-map'; paneId: string }
 type PaneFullscreen = { paneId: string; mode: 'native' | 'viewport' }
 const PANE_DRAG_TYPE = 'text/x-mindme-pane'
 function PaneHeader({
   pane,
   map,
-  maps,
   onChange,
   active,
   canReorder,
@@ -145,7 +143,6 @@ function PaneHeader({
 }: {
   pane: WorkspacePane
   map?: MindMap
-  maps: MindMap[]
   onChange: (patch: Partial<WorkspacePane>) => void
   active: boolean
   canReorder: boolean
@@ -157,29 +154,12 @@ function PaneHeader({
   saveState: Pick<ViewState, 'status' | 'pendingTasks' | 'error'>
   retrySave: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
   const effectiveScopeId = map && pane.scopeNodeId !== map.rootId ? pane.scopeNodeId : null
   const scopeText = map && effectiveScopeId ? map.nodes[effectiveScopeId]?.text : ''
   const summary = map ? `${map.title} · ${scopeText || '整张脑图'}` : '空白分区'
   const breadcrumbs = map ? scopePath(map, effectiveScopeId) : []
-  useEffect(() => {
-    if (!menuOpen) return
-    const close = (event: globalThis.PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false)
-    }
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setMenuOpen(false)
-    }
-    document.addEventListener('pointerdown', close)
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', close)
-      window.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [menuOpen])
   return (
-    <div className={`workspace-pane-header ${active ? 'active' : ''}`} ref={menuRef}>
+    <div className={`workspace-pane-header ${active ? 'active' : ''}`}>
       {canReorder && (
         <button
           type="button"
@@ -207,19 +187,7 @@ function PaneHeader({
           <GripVertical size={15} />
         </button>
       )}
-      <div
-        className="workspace-pane-summary"
-        role="button"
-        tabIndex={0}
-        aria-label={`当前分区：${summary}`}
-        onClick={() => setMenuOpen((open) => !open)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            setMenuOpen((open) => !open)
-          }
-        }}
-      >
+      <div className="workspace-pane-summary" aria-label={`当前分区：${summary}`}>
         {map && pane.scopeNodeId ? (
           <span className="workspace-pane-breadcrumbs" aria-label="下钻路径">
             {breadcrumbs.map((item, index) => (
@@ -228,10 +196,7 @@ function PaneHeader({
                 {index < breadcrumbs.length - 1 ? (
                   <button
                     type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onChange({ scopeNodeId: item.id })
-                    }}
+                    onClick={() => onChange({ scopeNodeId: item.id })}
                     aria-label={`返回到${item.text}`}
                     title={`返回到${item.text}`}
                   >
@@ -265,48 +230,6 @@ function PaneHeader({
               重试保存
             </button>
           )}
-        </div>
-      )}
-      {menuOpen && (
-        <div className="workspace-pane-menu" role="menu" aria-label="分区操作">
-          <div className="workspace-pane-menu-title">分区内容</div>
-          <select
-            aria-label="替换分区脑图"
-            value={pane.mapId}
-            onChange={(event) => {
-              onChange({ mapId: event.target.value, scopeNodeId: null })
-              setMenuOpen(false)
-            }}
-          >
-            <option value="">空白分区</option>
-            {maps.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="选择分区节点范围"
-            value={effectiveScopeId ?? ''}
-            disabled={!map}
-            onChange={(event) => {
-              onChange({
-                scopeNodeId:
-                  event.target.value && event.target.value !== map?.rootId
-                    ? event.target.value
-                    : null,
-              })
-              setMenuOpen(false)
-            }}
-          >
-            <option value="">整张脑图</option>
-            {map &&
-              nodeOptions(map).map((node) => (
-                <option key={node.id} value={node.id}>
-                  {node.text}
-                </option>
-              ))}
-          </select>
         </div>
       )}
     </div>
@@ -412,7 +335,6 @@ export function Workspace({
     target: { paneId: string; direction: SplitDirection; placement: 'first' | 'second' }
   } | null>(null)
   const panes = workspace.panes
-  const maps = Object.values(space.maps).filter((map) => map.deletedAt === null)
   const findPane = (id: string) =>
     Array.from(
       rootRef.current?.querySelectorAll<HTMLElement>('.workspace-pane[data-pane-id]') ?? [],
@@ -502,6 +424,37 @@ export function Workspace({
     focusPaneCanvas(paneId)
     notify('浏览器未允许系统全屏，已放大到当前窗口')
   }
+  useEffect(() => {
+    const onHome = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key !== 'Home' ||
+        event.repeat ||
+        event.isComposing ||
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        document.querySelector('dialog[open]')
+      )
+        return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          'input, select, textarea:not(.node-input-capture), button, a, [contenteditable]:not([contenteditable="false"]), [role="separator"]',
+        )
+      )
+        return
+      const paneId = workspace.activePaneId
+      if (!panes[paneId]) return
+      event.preventDefault()
+      event.stopPropagation()
+      void toggleFullscreen(paneId)
+    }
+    window.addEventListener('keydown', onHome, true)
+    return () => window.removeEventListener('keydown', onHome, true)
+  }, [fullscreen, panes, toggleFullscreen, workspace.activePaneId])
   const swapPanes = (source: string, target: string) => {
     if (saveStateRef.current.status === 'error') {
       notify('请先恢复本地保存，再调整画布位置')
@@ -610,6 +563,26 @@ export function Workspace({
     const pane = panes[paneId]
     if (pane)
       onWorkspaceChange({ ...workspace, panes: { ...panes, [paneId]: { ...pane, ...patch } } })
+  }
+  const assignMapToPane = (paneId: string, mapId: string) => {
+    const current = workspaceRef.current,
+      pane = current.panes[paneId],
+      nextMap = space.maps[mapId]
+    if (!pane || !nextMap || nextMap.deletedAt !== null) return
+    if (pane.mapId === mapId) {
+      notify('这个分区已经显示该脑图')
+      return
+    }
+    applyWorkspace({
+      ...current,
+      activePaneId: paneId,
+      panes: {
+        ...current.panes,
+        [paneId]: { ...pane, mapId, scopeNodeId: null, selection: singleSelection(null) },
+      },
+    })
+    onFit(paneId)
+    notify(`已切换为「${nextMap.title}」`)
   }
   const split = (
     paneId: string,
@@ -749,6 +722,12 @@ export function Workspace({
     }
   }
   const handleDragOver = (event: DragEvent<HTMLElement>, paneId: string) => {
+    if (event.dataTransfer.types.includes(PANE_MAP_DRAG_TYPE)) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+      setDropTarget({ type: 'pane-map', paneId })
+      return
+    }
     if (event.dataTransfer.types.includes(PANE_DRAG_TYPE)) {
       if (!draggingPane.current || draggingPane.current === paneId || fullscreen) {
         setDropTarget(null)
@@ -759,13 +738,19 @@ export function Workspace({
       setDropTarget({ type: 'pane', paneId })
       return
     }
-    if (!event.dataTransfer.types.includes('text/x-mindme-map')) return
+    if (!event.dataTransfer.types.includes(MAP_TAB_DRAG_TYPE)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
     setDropTarget({ type: 'map', ...dropPlacement(event, paneId) })
   }
   const handleDrop = (event: DragEvent<HTMLElement>, paneId: string) => {
     event.preventDefault()
+    if (event.dataTransfer.types.includes(PANE_MAP_DRAG_TYPE)) {
+      const mapId = event.dataTransfer.getData(PANE_MAP_DRAG_TYPE)
+      setDropTarget(null)
+      if (mapId) assignMapToPane(paneId, mapId)
+      return
+    }
     if (event.dataTransfer.types.includes(PANE_DRAG_TYPE)) {
       const source = event.dataTransfer.getData(PANE_DRAG_TYPE)
       setDropTarget(null)
@@ -773,8 +758,8 @@ export function Workspace({
         pendingPaneDrop.current = { source, target: paneId }
       return
     }
-    if (!event.dataTransfer.types.includes('text/x-mindme-map')) return
-    const mapId = event.dataTransfer.getData('text/x-mindme-map')
+    if (!event.dataTransfer.types.includes(MAP_TAB_DRAG_TYPE)) return
+    const mapId = event.dataTransfer.getData(MAP_TAB_DRAG_TYPE)
     const target = dropPlacement(event, paneId)
     setDropTarget(null)
     if (!mapId || !space.maps[mapId] || !target) return
@@ -787,6 +772,11 @@ export function Workspace({
       pendingPaneDrop.current = null
       draggingPane.current = null
     }
+  }, [])
+  useEffect(() => {
+    const clear = () => setDropTarget(null)
+    window.addEventListener('dragend', clear)
+    return () => window.removeEventListener('dragend', clear)
   }, [])
   useEffect(() => {
     const finishDrop = (event: Event) => {
@@ -868,7 +858,7 @@ export function Workspace({
     const fullscreenMarkers = frequentMarkers(markerUsage)
     return (
       <section
-        className={`workspace-pane ${workspace.activePaneId === pane.id ? 'active' : ''} ${dropTarget?.paneId === pane.id ? (dropTarget.type === 'pane' ? 'drop-swap' : `drop-${dropTarget.placement}-${dropTarget.direction}`) : ''} ${fullscreen?.paneId === pane.id && fullscreen.mode === 'viewport' ? 'viewport-fullscreen' : ''}`}
+        className={`workspace-pane ${workspace.activePaneId === pane.id ? 'active' : ''} ${dropTarget?.paneId === pane.id ? (dropTarget.type === 'pane' ? 'drop-swap' : dropTarget.type === 'pane-map' ? 'drop-map' : `drop-${dropTarget.placement}-${dropTarget.direction}`) : ''} ${fullscreen?.paneId === pane.id && fullscreen.mode === 'viewport' ? 'viewport-fullscreen' : ''}`}
         data-pane-id={pane.id}
         onPointerDownCapture={() => onActivate(pane.id)}
         onDragOver={(event) => handleDragOver(event, pane.id)}
@@ -881,7 +871,6 @@ export function Workspace({
           key={pane.id}
           pane={pane}
           map={map}
-          maps={maps}
           onChange={(patch) => updatePane(pane.id, patch)}
           active={workspace.activePaneId === pane.id}
           canReorder={leafCount(workspace.root) > 1 && !fullscreen}

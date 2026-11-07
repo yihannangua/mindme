@@ -21,7 +21,6 @@ import {
   History,
   Keyboard,
   BookOpen,
-  FileText,
   Pin,
   X,
   ChevronRight,
@@ -39,8 +38,11 @@ import { clone, MARKERS, type MarkerCategory, type NodeFont, type Space } from '
 import { editorState } from './persistence/editor-state'
 import { sidebarState } from './persistence/sidebar-state'
 import { frequentMarkers, markerLabel, markerUsageStorage } from './persistence/marker-usage'
+import { groupIdForMap, mapGroupStorage, type MapGroupState } from './persistence/map-groups'
 import { restoreSelection, retainSelection, singleSelection } from './editor/selection'
 import { Workspace } from './workspace/Workspace'
+import { MapGroupList } from './workspace/MapGroupList'
+import { MAP_TAB_DRAG_TYPE } from './workspace/drag-types'
 import {
   defaultWorkspace,
   loadWorkspace,
@@ -103,6 +105,11 @@ export default function App() {
     sidebarState.save(sidebarVisibility)
   }, [sidebarVisibility])
   const [markerUsage, setMarkerUsage] = useState(() => markerUsageStorage.load())
+  const [mapGroups, setMapGroups] = useState(() => mapGroupStorage.load())
+  const [renameGroupId, setRenameGroupId] = useState('')
+  const saveMapGroups = useCallback((next: MapGroupState) => {
+    setMapGroups(mapGroupStorage.save(next))
+  }, [])
   const selectedId = selection.activeId
   const setSelectedId = useCallback((id: string | null) => setSelection(singleSelection(id)), [])
   const setActiveId = useCallback((id: string) => {
@@ -438,7 +445,37 @@ export default function App() {
     setPurgeConfirmed(false)
     if (kind === 'new') setName('')
     if (kind === 'rename') setName(map?.title ?? '')
+    if (kind === 'new-group') setName('')
     setDialog(kind)
+  }
+  const openGroupRename = (id: string) => {
+    const group = mapGroups.groups.find((item) => item.id === id)
+    if (!group) return
+    setRenameGroupId(id)
+    setName(group.name)
+    setDialogError('')
+    setDialog('rename-group')
+  }
+  const createMapGroup = () => {
+    try {
+      saveMapGroups(mapGroupStorage.create(mapGroups, name))
+      setDialog('')
+    } catch (error) {
+      setDialogError(message(error))
+    }
+  }
+  const renameMapGroup = () => {
+    try {
+      saveMapGroups(mapGroupStorage.rename(mapGroups, renameGroupId, name))
+      setDialog('')
+    } catch (error) {
+      setDialogError(message(error))
+    }
+  }
+  const toggleMapGroup = (id: string) => saveMapGroups(mapGroupStorage.toggle(mapGroups, id))
+  const assignMapGroup = (mapId: string, groupId: string | null) => {
+    saveMapGroups(mapGroupStorage.assign(mapGroups, mapId, groupId))
+    notify(groupId ? '已移动到分组' : '已移到未分组')
   }
   const newMap = async () => {
     try {
@@ -855,7 +892,17 @@ export default function App() {
             新建脑图
           </button>
           <div className="section-label">
-            我的脑图 <span>· {maps.length}</span>
+            <span>
+              我的脑图 <span>· {maps.length}</span>
+            </span>
+            <button
+              className="new-group"
+              aria-label="新建分组"
+              title="新建分组"
+              onClick={() => openDialog('new-group')}
+            >
+              <Plus size={11} /> 分组
+            </button>
           </div>
           <label className="map-search">
             <Search size={13} />
@@ -866,23 +913,16 @@ export default function App() {
               onChange={(event) => setFilter(event.target.value)}
             />
           </label>
-          <nav className="files">
-            {maps
-              .filter((map) => map.title.includes(filter))
-              .sort((a, b) => b.updatedAt - a.updatedAt)
-              .map((item) => (
-                <button
-                  key={item.id}
-                  title={item.title}
-                  className={`file ${item.id === activeId ? 'active' : ''}`}
-                  onClick={() => void openMap(item.id)}
-                >
-                  <FileText size={15} />
-                  <span>{item.title}</span>
-                </button>
-              ))}
-            {!maps.length && <p className="muted">新建一张，开始整理想法。</p>}
-          </nav>
+          <MapGroupList
+            maps={maps}
+            activeId={activeId}
+            filter={filter}
+            groups={mapGroups}
+            onOpenMap={(id) => void openMap(id)}
+            onToggleGroup={toggleMapGroup}
+            onRenameGroup={openGroupRename}
+            onAssignMap={assignMapGroup}
+          />
           <div className="side-bottom">
             <button onClick={() => openDialog('import')}>
               <Upload size={14} />
@@ -922,7 +962,7 @@ export default function App() {
                 onDragStart={(event) => {
                   draggedTab.current = tab.mapId
                   event.dataTransfer.effectAllowed = 'copy'
-                  event.dataTransfer.setData('text/x-mindme-map', tab.mapId)
+                  event.dataTransfer.setData(MAP_TAB_DRAG_TYPE, tab.mapId)
                 }}
                 onDragEnd={() => {
                   draggedTab.current = null
@@ -1433,8 +1473,70 @@ export default function App() {
           </form>
         </Dialog>
       )}
+      {['new-group', 'rename-group'].includes(dialog) && (
+        <Dialog
+          title={dialog === 'new-group' ? '新建分组' : '重命名分组'}
+          close={() => setDialog('')}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (dialog === 'new-group') createMapGroup()
+              else renameMapGroup()
+            }}
+          >
+            <label className="field-label" htmlFor="group-name">
+              分组名称
+            </label>
+            <input
+              id="group-name"
+              autoFocus
+              maxLength={40}
+              value={name}
+              placeholder="例如：工作"
+              onChange={(event) => setName(event.target.value)}
+            />
+            <p className="muted">分组只保存在当前浏览器，不影响脑图内容和云端同步。</p>
+            {dialogError && (
+              <p role="alert" className="error-message">
+                {dialogError}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setDialog('')}>
+                取消
+              </button>
+              <button className="primary">
+                {dialog === 'new-group' ? '创建分组' : '保存名称'}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
       {dialog === 'map-menu' && map && (
         <Dialog title={map.title} close={() => setDialog('')}>
+          <label className="field-label" htmlFor="map-group">
+            分组
+          </label>
+          <select
+            id="map-group"
+            className="map-group-select"
+            aria-label="移动脑图到分组"
+            value={groupIdForMap(mapGroups, map.id) ?? ''}
+            onChange={(event) => {
+              assignMapGroup(map.id, event.target.value || null)
+              setDialog('')
+            }}
+          >
+            <option value="">未分组</option>
+            {[...mapGroups.groups]
+              .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+              .map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+          </select>
           <div className="menu-actions">
             <button onClick={() => openDialog('rename')}>重命名脑图</button>
             <button
