@@ -77,6 +77,10 @@ describe('领域命令与不变量', () => {
     expect(first(space).nodes[nodeId].markers).toEqual({ priority: '②', flag: 'blue' })
     space = edit(space, { type: 'marker', nodeId, category: 'flag', value: 'blue' })
     expect(first(space).nodes[nodeId].markers).toEqual({ priority: '②' })
+    space = edit(space, { type: 'marker', nodeId, category: 'star', value: 'red' })
+    expect(first(space).nodes[nodeId].markers).toEqual({ priority: '②', star: 'red' })
+    space = edit(space, { type: 'marker', nodeId, category: 'star', value: 'red' })
+    expect(first(space).nodes[nodeId].markers).toEqual({ priority: '②' })
     for (const value of MARKERS.progress)
       expect(() =>
         edit(space, { type: 'marker', nodeId, category: 'progress', value }),

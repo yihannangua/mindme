@@ -88,7 +88,7 @@ test('常用图标最多五个，次数优先且同次数最近优先，切图�
     group
       .getByRole('button')
       .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')))
-  const expected = ['旗子 blue', '旗子 red', '优先级 ①', '旗子 green', '旗子 orange'].map(
+  const expected = ['旗子 blue', '旗子 red', '优先级 1', '旗子 green', '旗子 orange'].map(
     (s) => `常用图标：${s}`,
   )
   await expect(group.getByRole('button')).toHaveCount(5)
@@ -108,6 +108,41 @@ test('常用图标最多五个，次数优先且同次数最近优先，切图�
   for (const button of await group.getByRole('button').all()) await expect(button).toBeVisible()
   await expect(page.getByRole('button', { name: '收起节点面板', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('常用图标-窄窗口.png') })
+})
+
+test('表情、星星、人像、箭头、符号和月份标记可设置、显示并撤销', async ({ page }) => {
+  await page.goto('/')
+  const target = node(page, '想要探索的事')
+  await target.click()
+  const labels = ['表情 微笑', '星星 red', '人像 blue', '箭头 向上', '符号 加号', '月份 1']
+  for (const [index, label] of labels.entries()) {
+    const button = page.getByRole('button', { name: label, exact: true })
+    await button.click()
+    await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(target.locator('svg')).toHaveCount(index + 1)
+  }
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(target.locator('svg')).toHaveCount(labels.length - 1)
+})
+
+test('节点上的图标可点击替换和删除', async ({ page }) => {
+  await page.goto('/')
+  const target = node(page, '想要探索的事')
+  await target.click()
+  await page.getByRole('button', { name: '星星 red', exact: true }).click()
+  const marker = target.getByRole('button', { name: '编辑图标：星星 red', exact: true })
+  await expect(marker).toBeVisible()
+  await marker.click()
+  const editor = page.getByRole('dialog', { name: '编辑节点图标', exact: true })
+  await expect(editor).toBeVisible()
+  await editor.getByRole('button', { name: '星星 blue', exact: true }).click()
+  await expect(
+    target.getByRole('button', { name: '编辑图标：星星 blue', exact: true }),
+  ).toBeVisible()
+  await target.getByRole('button', { name: '编辑图标：星星 blue', exact: true }).click()
+  await editor.getByRole('button', { name: '删除图标', exact: true }).click()
+  await expect(target.getByRole('button', { name: /^编辑图标：/ })).toHaveCount(0)
+  await expect(target.locator('svg')).toHaveCount(0)
 })
 
 test('Command 方括号独立切换左右侧栏、保留多选，输入和组合期间不触发', async ({ page }) => {

@@ -1,5 +1,15 @@
 import { validateSpace } from './model'
-import { assert, clone, equal, own, type Change, type HistoryChange, type Space } from './types'
+import {
+  assert,
+  clone,
+  equal,
+  MARKERS,
+  own,
+  type Change,
+  type HistoryChange,
+  type MarkerCategory,
+  type Space,
+} from './types'
 
 const mapFields = ['title', 'deletedAt', 'historyDirtySince'] as const
 const nodeFields = [
@@ -13,6 +23,7 @@ const nodeFields = [
   'fontSize',
   'backgroundColor',
 ] as const
+const markerCategories = Object.keys(MARKERS) as MarkerCategory[]
 export function diffSpace(before: Space, after: Space): Change[] {
   const changes: Change[] = []
   const add = (change: Change) => {
@@ -44,7 +55,7 @@ export function diffSpace(before: Space, after: Space): Change[] {
       }
       for (const field of nodeFields)
         add({ mapId, nodeId, field, before: an[field] ?? null, after: bn[field] ?? null })
-      for (const category of ['priority', 'progress', 'flag'] as const)
+      for (const category of markerCategories)
         add({
           mapId,
           nodeId,
@@ -79,7 +90,7 @@ export function readField(
   if (change.field === '$node') return node ?? null
   if (!node) return null
   return change.field.startsWith('marker:')
-    ? (node.markers[change.field.slice(7) as 'flag'] ?? null)
+    ? (node.markers[change.field.slice(7) as MarkerCategory] ?? null)
     : (node[change.field as 'text'] ?? null)
 }
 export function applyChanges(space: Space, changes: Change[], now: number): Space {
@@ -119,8 +130,8 @@ export function applyChanges(space: Space, changes: Change[], now: number): Spac
     } else {
       assert(own(map.nodes, nodeId), '节点已删除')
       if (field.startsWith('marker:')) {
-        const category = field.slice(7) as 'flag'
-        assert(['priority', 'progress', 'flag'].includes(category), '标记类别不合法')
+        const category = field.slice(7) as MarkerCategory
+        assert(markerCategories.includes(category), '标记类别不合法')
         if (after === null) delete map.nodes[nodeId].markers[category]
         else map.nodes[nodeId].markers[category] = after as string
       } else {

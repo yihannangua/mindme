@@ -12,12 +12,18 @@ import {
 import { selectedForest } from '../domain/branches'
 import type { Command } from '../domain/commands'
 import { children } from '../domain/model'
-import type { MapContent, MarkerCategory, MindMap } from '../domain/types'
+import {
+  visibleMarkerValues,
+  type MapContent,
+  type MarkerCategory,
+  type MindMap,
+} from '../domain/types'
 import type { ImportDraft } from '../importers/outline'
 import { BRANCHES_MIME, branchText, copyBranches } from '../importers/backup'
 import { edgePath, layoutTree, type TextMeasure } from '../layout/tree'
 import { appStore } from '../app/store'
 import { MarkerIcon } from '../components/MarkerIcon'
+import { markerCategoryLabel, markerLabel } from '../persistence/marker-usage'
 import { nextDirectionalNode, type Direction } from './navigation'
 import { editorState, type CanvasView } from '../persistence/editor-state'
 import type { CanvasStyle } from './style'
@@ -117,10 +123,39 @@ export function Canvas({
       y: number
       target: string | null
     } | null>(null)
+  const [markerEditor, setMarkerEditor] = useState<{
+    nodeId: string
+    category: MarkerCategory
+    x: number
+    y: number
+  } | null>(null)
+  const markerEditorRef = useRef<HTMLDivElement>(null)
   const [canvasStyle, setCanvasStyle] = useState<CanvasStyle>(savedState.style ?? 'classic'),
     [styleMenuOpen, setStyleMenuOpen] = useState(false),
     [panning, setPanning] = useState(false)
   const [edit, setEdit] = useState<{ id: string; text: string; original: string } | null>(null)
+  useEffect(() => {
+    if (!markerEditor) return
+    const outside = (event: globalThis.PointerEvent) => {
+      if (markerEditorRef.current && !markerEditorRef.current.contains(event.target as Node))
+        setMarkerEditor(null)
+    }
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setMarkerEditor(null)
+    }
+    document.addEventListener('pointerdown', outside)
+    window.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      window.removeEventListener('keydown', escape, true)
+    }
+  }, [markerEditor])
+  useEffect(() => {
+    if (markerEditor && !map.nodes[markerEditor.nodeId]) setMarkerEditor(null)
+  }, [map, markerEditor])
   const finishing = useRef(false),
     selectTextOnEdit = useRef(true)
   const [editSize, setEditSize] = useState<{ id: string; text: string; height: number } | null>(
@@ -273,6 +308,22 @@ export function Canvas({
     if (container.current?.hasPointerCapture(state.pointerId))
       container.current.releasePointerCapture(state.pointerId)
   }, [selectionChanged])
+  const openMarkerEditor = (
+    element: SVGGraphicsElement,
+    nodeId: string,
+    category: MarkerCategory,
+  ) => {
+    const host = container.current?.getBoundingClientRect()
+    if (!host) return
+    const rect = element.getBoundingClientRect()
+    select(nodeId)
+    setMarkerEditor({
+      nodeId,
+      category,
+      x: Math.max(8, Math.min(rect.left - host.left, Math.max(8, host.width - 252))),
+      y: Math.max(8, Math.min(rect.bottom - host.top + 4, Math.max(8, host.height - 220))),
+    })
+  }
   const startEdit = useCallback(
     (id: string) => {
       const node = map.nodes[id]
@@ -717,15 +768,21 @@ export function Canvas({
                       : {}),
                   }}
                 />
-                {Object.entries(node.markers).map(([category, value], i) => (
-                  <MarkerIcon
-                    key={category}
-                    category={category as MarkerCategory}
-                    value={value!}
-                    x={markerStart + i * 22}
-                    y={height / 2 - 9.5}
-                  />
-                ))}
+                {Object.entries(node.markers).map(([category, value], i) => {
+                  const markerCategory = category as MarkerCategory,
+                    markerValue = value!
+                  return (
+                    <MarkerIcon
+                      key={category}
+                      category={markerCategory}
+                      value={markerValue}
+                      x={markerStart + i * 22}
+                      y={height / 2 - 9.5}
+                      label={`编辑图标：${markerLabel(markerCategory, markerValue)}`}
+                      onActivate={(element) => openMarkerEditor(element, node.id, markerCategory)}
+                    />
+                  )
+                })}
                 {!editing && (
                   <text
                     className="node-label"
@@ -852,6 +909,67 @@ export function Canvas({
           })}
         </g>
       </svg>
+      {markerEditor &&
+        (() => {
+          const editor = markerEditor,
+            editorNode = map.nodes[editor.nodeId],
+            currentValue = editorNode?.markers[editor.category]
+          if (!editorNode || !currentValue) return null
+          return (
+            <div
+              className="node-marker-editor"
+              role="dialog"
+              aria-label="编辑节点图标"
+              ref={markerEditorRef}
+              style={{ left: editor.x, top: editor.y }}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="node-marker-editor-head">
+                <span>{markerCategoryLabel(editor.category)}</span>
+                <button aria-label="关闭图标编辑" onClick={() => setMarkerEditor(null)}>
+                  ×
+                </button>
+              </div>
+              <div className="node-marker-editor-grid">
+                {visibleMarkerValues(editor.category).map((value) => (
+                  <button
+                    key={value}
+                    aria-label={markerLabel(editor.category, value)}
+                    aria-pressed={value === currentValue}
+                    onClick={() => {
+                      setMarkerEditor(null)
+                      void command({
+                        type: 'marker',
+                        nodeId: editorNode.id,
+                        category: editor.category,
+                        value,
+                      }).catch(() => undefined)
+                    }}
+                  >
+                    <svg width="20" height="20">
+                      <MarkerIcon category={editor.category} value={value} />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              <button
+                className="node-marker-delete"
+                onClick={() => {
+                  setMarkerEditor(null)
+                  void command({
+                    type: 'marker',
+                    nodeId: editorNode.id,
+                    category: editor.category,
+                    value: currentValue,
+                  }).catch(() => undefined)
+                }}
+              >
+                删除图标
+              </button>
+            </div>
+          )
+        })()}
       {preview?.target && (
         <div className="attach-hint">
           松手后

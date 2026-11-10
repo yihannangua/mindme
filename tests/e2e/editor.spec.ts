@@ -60,7 +60,7 @@ test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('当前版本 v0.1.13', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('当前版本 v0.1.14', { exact: true })).toBeVisible()
   await root(page).click()
   await page.getByLabel('脑图画布', { exact: true }).press('Tab')
   await page.getByLabel('脑图画布', { exact: true }).focus()
@@ -95,7 +95,7 @@ test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async
   await expect(page.getByRole('button', { name: '撤销', exact: true })).toBeDisabled()
   expect(errors).toEqual([])
 })
-for (const marker of ['优先级 ①', '进度 4/8', '旗子 blue']) {
+for (const marker of ['优先级 1', '进度 4/8', '旗子 blue']) {
   test(`鼠标设置标记后回车继续编辑，保留原节点标记：${marker}`, async ({ page }) => {
     await page.goto('/')
     const source = page.getByRole('button', { name: '节点 想要探索的事', exact: true }),
@@ -125,7 +125,7 @@ for (const marker of ['优先级 ①', '进度 4/8', '旗子 blue']) {
   })
 }
 
-for (const marker of ['优先级 ①', '进度 4/8', '旗子 blue']) {
+for (const marker of ['优先级 1', '进度 4/8', '旗子 blue']) {
   test(`多选设置标记统一生效、保留选择、整批撤销及刷新恢复：${marker}`, async ({ page }) => {
     await page.goto('/')
     const a = page.getByRole('button', { name: '节点 想要探索的事', exact: true }),

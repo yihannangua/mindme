@@ -34,10 +34,22 @@ import {
 import { appStore, context, message } from './app/store'
 import type { Command } from './domain/commands'
 import { createMap, uniqueName } from './domain/model'
-import { clone, MARKERS, type MarkerCategory, type NodeFont, type Space } from './domain/types'
+import {
+  clone,
+  MARKERS,
+  type MarkerCategory,
+  type NodeFont,
+  type Space,
+  visibleMarkerValues,
+} from './domain/types'
 import { editorState } from './persistence/editor-state'
 import { sidebarState } from './persistence/sidebar-state'
-import { frequentMarkers, markerLabel, markerUsageStorage } from './persistence/marker-usage'
+import {
+  frequentMarkers,
+  markerCategoryLabel,
+  markerLabel,
+  markerUsageStorage,
+} from './persistence/marker-usage'
 import { groupIdForMap, mapGroupStorage, type MapGroupState } from './persistence/map-groups'
 import { restoreSelection, retainSelection, singleSelection } from './editor/selection'
 import { Workspace } from './workspace/Workspace'
@@ -1346,15 +1358,9 @@ export default function App() {
             </h3>
             {(Object.keys(MARKERS) as MarkerCategory[]).map((category) => (
               <div className="marker-group" key={category}>
-                <span>
-                  {category === 'priority'
-                    ? '优先级'
-                    : category === 'progress'
-                      ? '任务进度'
-                      : '旗子'}
-                </span>
+                <span>{markerCategoryLabel(category)}</span>
                 <div>
-                  {MARKERS[category].map((value) => (
+                  {visibleMarkerValues(category).map((value) => (
                     <button
                       key={value}
                       aria-label={markerLabel(category, value)}

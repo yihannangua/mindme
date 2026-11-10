@@ -400,7 +400,7 @@ test('经典与紧凑风格切换、每张脑图本机持久化且不改动脑�
   await node(page, '想要探索的事').click()
   await page.getByRole('button', { name: '旗子 blue', exact: true }).click()
   const rightMarker = await node(page, '想要探索的事')
-    .locator('svg[aria-hidden="true"]')
+    .locator('svg.node-marker')
     .evaluate((element) => {
       const nodeElement = element.closest('.mind-node')!
       return {
@@ -409,9 +409,9 @@ test('经典与紧凑风格切换、每张脑图本机持久化且不改动脑�
       }
     })
   await node(page, '灵感与收集').click()
-  await page.getByRole('button', { name: '优先级 ①', exact: true }).click()
+  await page.getByRole('button', { name: '优先级 1', exact: true }).click()
   const leftMarker = await node(page, '灵感与收集')
-    .locator('svg[aria-hidden="true"]')
+    .locator('svg.node-marker')
     .evaluate((element) => {
       const nodeElement = element.closest('.mind-node')!
       return {
