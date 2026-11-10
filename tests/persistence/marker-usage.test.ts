@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { visibleMarkerValues } from '../../src/domain/types'
 import {
   frequentMarkers,
   MarkerUsageStorage,
@@ -87,7 +88,12 @@ describe('常用图标本机偏好', () => {
   it('进度标签与右侧图标一致', () => {
     expect(markerLabel('progress', 'start')).toBe('进度 0/8')
     expect(markerLabel('progress', 'done')).toBe('进度 8/8')
-    expect(markerLabel('priority', '①')).toBe('优先级 ①')
+    expect(markerLabel('priority', '①')).toBe('优先级 1')
     expect(markerLabel('flag', 'blue')).toBe('旗子 blue')
+    expect(markerLabel('expression', 'smile')).toBe('表情 微笑')
+    expect(markerLabel('arrow', 'up')).toBe('箭头 向上')
+    expect(markerLabel('symbol', 'plus')).toBe('符号 加号')
+    expect(markerLabel('month', '1')).toBe('月份 1')
+    expect(visibleMarkerValues('priority')).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
   })
 })

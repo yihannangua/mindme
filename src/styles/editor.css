@@ -995,6 +995,67 @@ button.primary:hover {
   fill: #7c939f;
   pointer-events: none;
 }
+.node-marker {
+  cursor: pointer;
+}
+.node-marker:focus-visible {
+  outline: 2px solid #4b88b3;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.node-marker-editor {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: min(260px, calc(100% - 16px));
+  max-height: min(360px, calc(100% - 16px));
+  overflow: auto;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px #29364026;
+}
+.node-marker-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #4f6674;
+  font-size: 11px;
+  font-weight: 600;
+}
+.node-marker-editor-head button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: #7b8992;
+  font-size: 15px;
+}
+.node-marker-editor-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.node-marker-editor-grid button {
+  padding: 3px;
+  border: 1px solid #e9edef;
+  border-radius: 5px;
+}
+.node-marker-editor-grid button[aria-pressed='true'] {
+  background: #e8f0f5;
+  border-color: #8eb0ca;
+}
+.node-marker-delete {
+  align-self: flex-start;
+  padding: 4px 8px;
+  color: #b84a40;
+  background: #fbeeed;
+  border-color: #efd0cc;
+  font-size: 11px;
+}
 .node-input-capture {
   width: 100%;
   height: 100%;

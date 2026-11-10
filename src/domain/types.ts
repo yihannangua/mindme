@@ -7,11 +7,62 @@ export const LIMITS = {
   fileBytes: 20 * 1024 * 1024,
 } as const
 export const MARKERS = {
-  priority: ['①', '②', '③', '④'],
+  priority: ['①', '②', '③', '④', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+  expression: ['smile', 'grin', 'angry', 'cry', 'surprised', 'sleepy', 'neutral'],
   progress: ['start', '1/8', '2/8', '3/8', '4/8', '5/8', '6/8', '7/8', 'done'],
   flag: ['red', 'orange', 'blue', 'green', 'purple', 'teal', 'gray'],
+  star: ['red', 'orange', 'blue', 'green', 'purple', 'teal', 'gray'],
+  person: ['red', 'orange', 'blue', 'green', 'purple', 'teal', 'gray'],
+  arrow: [
+    'up',
+    'up-right',
+    'right',
+    'down-right',
+    'down',
+    'down-left',
+    'left',
+    'up-left',
+    'rotate',
+  ],
+  symbol: [
+    'plus',
+    'minus',
+    'question',
+    'info',
+    'exclamation',
+    'cross',
+    'check',
+    'pause',
+    'chart',
+    'people',
+    'thumb-down',
+    'quote',
+    'tools',
+    'plane',
+    'heart',
+    'thumb-up',
+    'trend-up',
+    'key',
+    'dollar',
+    'music',
+    'pencil',
+    'pie',
+    'cart',
+    'phone',
+    'thermometer',
+    'trophy',
+  ],
+  month: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
 } as const
 export type MarkerCategory = keyof typeof MARKERS
+// 旧版优先级使用圈号，继续接受以便读取和迁移已有空间；新面板只展示 1–9。
+export const LEGACY_MARKER_VALUES: Partial<Record<MarkerCategory, readonly string[]>> = {
+  priority: ['①', '②', '③', '④'],
+}
+export const visibleMarkerValues = (category: MarkerCategory) =>
+  (MARKERS[category] as readonly string[]).filter(
+    (value) => !(LEGACY_MARKER_VALUES[category] as readonly string[] | undefined)?.includes(value),
+  )
 export type Markers = Partial<Record<MarkerCategory, string>>
 export const NODE_FONTS = ['sans', 'serif', 'mono'] as const
 export type NodeFont = (typeof NODE_FONTS)[number]
