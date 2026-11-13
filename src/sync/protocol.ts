@@ -3,6 +3,7 @@ import {
   clone,
   emptySpace,
   equal,
+  MARKERS,
   own,
   safeId,
   type Change,
@@ -51,6 +52,10 @@ export function orderStamp(a: Stamp, b: Stamp): 'newer' | 'older' | 'unknown' {
   if (a.at + a.uncertainty < b.at - b.uncertainty) return 'older'
   return 'unknown'
 }
+// 标记字段合法性与 MARKERS 保持同源，新增类别不再需要同步修改白名单。
+const markerField = (field: string) =>
+  field.startsWith('marker:') && (Object.keys(MARKERS) as string[]).includes(field.slice(7))
+
 export function validateOperation(op: Operation): boolean {
   return (
     !!op &&
@@ -77,7 +82,8 @@ export function validateOperation(op: Operation): boolean {
         (c.nodeId === undefined || safeId(c.nodeId)) &&
         typeof c.field === 'string' &&
         (c.nodeId
-          ? [
+          ? markerField(c.field) ||
+            [
               '$node',
               'parentId',
               'order',
@@ -88,10 +94,7 @@ export function validateOperation(op: Operation): boolean {
               'fontFamily',
               'fontSize',
               'backgroundColor',
-              'marker:priority',
-              'marker:progress',
-              'marker:flag',
-            ]
+            ].includes(c.field)
           : [
               '$map',
               '$tab',
@@ -103,8 +106,7 @@ export function validateOperation(op: Operation): boolean {
               'tab:open',
               'tab:pinned',
               'tab:order',
-            ]
-        ).includes(c.field),
+            ].includes(c.field)),
     )
   )
 }

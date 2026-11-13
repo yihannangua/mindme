@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { execute } from '../../src/domain/commands'
 import { children } from '../../src/domain/model'
-import { emptySpace } from '../../src/domain/types'
+import { emptySpace, MARKERS } from '../../src/domain/types'
 import {
   errorClass,
   mergeOperation,
@@ -33,6 +33,16 @@ describe('双设备同步协议', () => {
       text: 'A的文字',
       markers: { flag: 'blue' },
     })
+  })
+  it('接受全部已定义标记类别（新增类别不被服务端白名单拒绝）', () => {
+    const { state, space, nodeId } = setup()
+    for (const category of Object.keys(MARKERS) as (keyof typeof MARKERS)[]) {
+      const value = MARKERS[category][0]
+      const next = edit(space, { type: 'marker', nodeId, category, value })
+      const merged = mergeOperation(state, operation(space, next, 'A', 3000, 1, 1), 10000)
+      expect(merged.result.status, category).toBe('accepted')
+      expect(first(merged.state.space).nodes[nodeId].markers[category]).toBe(value)
+    }
   })
   it('旧离线修改晚上传也不能覆盖新修改', () => {
     const { state, space, nodeId } = setup()
