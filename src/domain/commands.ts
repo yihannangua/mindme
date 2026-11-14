@@ -56,6 +56,11 @@ function selectionAfterDelete(map: MapContent, id: string, removed: Set<string>)
   )
 }
 
+// 重新挂接或新增父主题后，整棵移动子树的手动偏移都已失效。
+function clearSubtreePositions(map: MapContent, id: string) {
+  for (const nodeId of subtree(map, id)) map.nodes[nodeId].position = null
+}
+
 export function execute(
   space: Space,
   mapId: string,
@@ -86,6 +91,7 @@ export function execute(
         side: node!.id === map.rootId ? (siblings.length % 4 < 2 ? 1 : -1) : node!.side,
       }
       if (command.kind === 'parent') {
+        clearSubtreePositions(map, node!.id)
         node!.parentId = id
         node!.order = 0
       }
@@ -127,7 +133,7 @@ export function execute(
       )
       node!.parentId = command.parentId
       node!.order = children(map, command.parentId).length
-      node!.position = null
+      clearSubtreePositions(map, node!.id)
       node!.side = map.nodes[command.parentId].side || 1
       break
     }
@@ -148,9 +154,11 @@ export function execute(
         const root = map.nodes[id]
         root.parentId = command.parentId
         root.order = order + i
-        root.position = null
       }
-      if (targetSide !== null) for (const id of forest.ids) map.nodes[id].side = targetSide
+      for (const id of forest.ids) {
+        map.nodes[id].position = null
+        if (targetSide !== null) map.nodes[id].side = targetSide
+      }
       break
     }
     case 'sort': {
