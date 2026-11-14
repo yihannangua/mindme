@@ -60,7 +60,7 @@ test('节点编辑、快捷键、标记、折叠、撤销与刷新恢复', async
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
-  await expect(page.getByLabel('当前版本 v0.1.15', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('当前版本 v0.1.16', { exact: true })).toBeVisible()
   await root(page).click()
   await page.getByLabel('脑图画布', { exact: true }).press('Tab')
   await page.getByLabel('脑图画布', { exact: true }).focus()
@@ -1448,6 +1448,57 @@ test('节点普通拖动不改父级，挂接提示后松手改变父级，滚�
   await page.mouse.wheel(0, -100)
   await expect(page.locator('.graph>g')).not.toHaveAttribute('transform', transform!)
 })
+test('挂接带残留手动偏移的分支后父子重新对齐', async ({ page }) => {
+  const nodes: Backup['maps'][number]['nodes'] = {
+    root: { ...makeNode('root', null, '布局修复测试') },
+    target: { ...makeNode('target', 'root', '目标', 0), side: -1 },
+    source: {
+      ...makeNode('source', 'root', '八、阶段三', 1),
+      side: 1,
+      position: { x: 30, y: 40 },
+    },
+    child: {
+      ...makeNode('child', 'source', '中间任务', 0),
+      side: 1,
+      position: { x: 55, y: 35 },
+    },
+  }
+  const backup: Backup = {
+    format: 'mindme',
+    schemaVersion: 1,
+    exportedAt: 1000,
+    maps: [{ id: 'layout-fix', title: '布局修复测试', rootId: 'root', nodes, deletedAt: null }],
+    tabs: [{ mapId: 'layout-fix', open: true, pinned: false, order: 0 }],
+  }
+  await page.goto('/')
+  await page.getByRole('button', { name: '导入', exact: true }).click()
+  await page.getByRole('button', { name: 'JSON 备份', exact: true }).click()
+  await page.getByLabel('选择导入文件').setInputFiles({
+    name: 'layout-fix.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(backup)),
+  })
+  await expect(page.getByText('已恢复 1 张脑图的新副本。', { exact: false })).toBeVisible()
+  await page.getByLabel('关闭对话框').click()
+  const node = (name: string) => page.getByRole('button', { name: `节点 ${name}`, exact: true })
+  const source = (await node('八、阶段三').boundingBox())!,
+    target = (await node('目标').boundingBox())!
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {
+    steps: 12,
+  })
+  await expect(page.getByText('松手后挂接到「目标」', { exact: true })).toBeVisible()
+  await page.mouse.up()
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '适应画布', exact: true }).click()
+  await expect(node('中间任务')).toBeVisible()
+  const parent = (await node('八、阶段三').boundingBox())!,
+    child = (await node('中间任务').boundingBox())!
+  expect(Math.abs(parent.y + parent.height / 2 - (child.y + child.height / 2))).toBeLessThan(1)
+  expect(child.x).toBeLessThan(parent.x)
+})
+
 test('XMind 8 实际文件选择导入多图与未知标记报告', async ({ page }) => {
   const { zipSync, strToU8 } = await import('fflate')
   const xml =

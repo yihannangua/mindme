@@ -3,6 +3,7 @@ import { makeNode, children, createMap } from '../../src/domain/model'
 import { execute } from '../../src/domain/commands'
 import { selectedForest } from '../../src/domain/branches'
 import { diffSpace } from '../../src/domain/operations'
+import { layoutTree } from '../../src/layout/tree'
 import { mergeOperation, newServerState } from '../../src/sync/protocol'
 import { ctx, first, seed, operation } from '../helpers'
 
@@ -15,8 +16,17 @@ function fixture() {
       side: id === 'target' ? -1 : 1,
       position: { x: 20, y: 10 },
     }
-  map.nodes.child = { ...makeNode('child', 'a', '后代'), side: 1, markers: { flag: 'blue' } }
-  map.nodes.grandchild = { ...makeNode('grandchild', 'child', '孙节点'), side: 1 }
+  map.nodes.child = {
+    ...makeNode('child', 'a', '后代'),
+    side: 1,
+    markers: { flag: 'blue' },
+    position: { x: 35, y: 18 },
+  }
+  map.nodes.grandchild = {
+    ...makeNode('grandchild', 'child', '孙节点'),
+    side: 1,
+    position: { x: 12, y: 6 },
+  }
   map.nodes.existing = { ...makeNode('existing', 'target', '既有孩子', 10), side: -1 }
   return space
 }
@@ -52,7 +62,7 @@ describe('多选分支批量挂接', () => {
     )
     expect(children(next, 'target').map((node) => node.id)).toEqual(['existing', 'a', 'b'])
     expect(next.nodes.target.collapsed).toBe(true)
-    for (const id of ['a', 'b']) expect(next.nodes[id].position).toBeNull()
+    for (const id of ['a', 'b', 'child', 'grandchild']) expect(next.nodes[id].position).toBeNull()
     for (const id of ['a', 'b', 'child', 'grandchild']) expect(next.nodes[id].side).toBe(-1)
     expect(next.nodes.child.parentId).toBe('a')
     expect(next.nodes.grandchild.parentId).toBe('child')
@@ -77,10 +87,42 @@ describe('多选分支批量挂接', () => {
       after = execute(source, map.id, command, ctx()).space
     expect(after.maps[map.id].nodes.target).toEqual(map.nodes.target)
     expect(after.maps[map.id].nodes.a.parentId).toBe('target')
+    expect(after.maps[map.id].nodes.child.parentId).toBe('a')
+    for (const id of ['a', 'child', 'grandchild'])
+      expect(after.maps[map.id].nodes[id].position).toBeNull()
+    if (mode === 'many') expect(after.maps[map.id].nodes.b.position).toBeNull()
+    else expect(after.maps[map.id].nodes.b.position).toEqual({ x: 20, y: 10 })
     expect(after.maps[map.id].nodes.child.collapsed).toBe(true)
     expect(after.maps[map.id].nodes.grandchild.parentId).toBe('child')
     expect(diffSpace(source, after).some((change) => change.field === 'collapsed')).toBe(false)
     expect(source).toEqual(before)
+  })
+  it('单分支挂接清除整棵子树手动偏移，父子重新对齐', () => {
+    const source = fixture(),
+      map = first(source),
+      next = first(
+        execute(source, map.id, { type: 'reparent', nodeId: 'a', parentId: 'target' }, ctx()).space,
+      ),
+      layout = layoutTree(next)
+    for (const id of ['a', 'child', 'grandchild']) expect(next.nodes[id].position).toBeNull()
+    expect(next.nodes.b.position).toEqual({ x: 20, y: 10 })
+    expect(layout.byId.get('a')!.y).toBe(layout.byId.get('child')!.y)
+  })
+  it('新增父主题清除整棵分支的手动偏移', () => {
+    const source = fixture(),
+      map = first(source),
+      next = first(
+        execute(
+          source,
+          map.id,
+          { type: 'add', nodeId: 'a', kind: 'parent', text: '新父主题' },
+          ctx(),
+        ).space,
+      ),
+      parent = Object.values(next.nodes).find((node) => node.text === '新父主题')!
+    expect(next.nodes.a.parentId).toBe(parent.id)
+    for (const id of ['a', 'child', 'grandchild', parent.id])
+      expect(next.nodes[id].position).toBeNull()
   })
   it('父子同时选中只挂接最外层分支，范围不重复且不拆散层级', () => {
     const source = fixture(),
