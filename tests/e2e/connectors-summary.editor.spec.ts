@@ -25,6 +25,16 @@ test('从节点创建曲线连线，并在连线标签上修改文字和刷新�
   await expect(page.locator('.node-link')).toHaveCount(1)
   await expect(page.locator('.node-link')).toHaveAttribute('data-from-side', '1')
   await expect(page.locator('.node-link')).toHaveAttribute('data-to-side', '1')
+  const hit = page.locator('.node-link-hit')
+  await expect(hit).toHaveCount(1)
+  const point = await hit.evaluate((node) => {
+    const path = node as SVGPathElement,
+      at = path.getPointAtLength(path.getTotalLength() * 0.3),
+      screen = new DOMPoint(at.x, at.y).matrixTransform(path.getScreenCTM()!)
+    return { x: screen.x, y: screen.y }
+  })
+  await page.mouse.click(point.x + 6, point.y + 6)
+  await expect(page.locator('.node-link')).toHaveClass(/selected/)
   await label.click()
   const input = page.getByLabel('编辑连线文字', { exact: true })
   await expect(input).toBeFocused()

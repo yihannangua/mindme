@@ -442,6 +442,15 @@ export function Canvas({
     },
     [map, select],
   )
+  const chooseLink = useCallback(
+    (id: string) => {
+      select(null)
+      setSelectedSummaryId(null)
+      setSelectedLinkId(id)
+      container.current?.focus({ preventScroll: true })
+    },
+    [select],
+  )
   const finishAnnotationEdit = useCallback(
     (cancel = false) => {
       const editor = annotationEditor
@@ -954,21 +963,30 @@ export function Canvas({
             />
           ))}
           {displayLinks.map(({ link, geometry }) => (
-            <path
-              key={`link-${link.id}`}
-              className={`node-link ${selectedLinkId === link.id ? 'selected' : ''}`}
-              data-from-side={geometry.fromSide}
-              data-to-side={geometry.toSide}
-              d={geometry.d}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation()
-                select(null)
-                setSelectedSummaryId(null)
-                setSelectedLinkId(link.id)
-                container.current?.focus({ preventScroll: true })
-              }}
-            />
+            <g key={`link-${link.id}`}>
+              <path
+                className="node-link-hit"
+                data-link-id={link.id}
+                d={geometry.d}
+                vectorEffect="non-scaling-stroke"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  chooseLink(link.id)
+                }}
+              />
+              <path
+                className={`node-link ${selectedLinkId === link.id ? 'selected' : ''}`}
+                data-from-side={geometry.fromSide}
+                data-to-side={geometry.toSide}
+                d={geometry.d}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  chooseLink(link.id)
+                }}
+              />
+            </g>
           ))}
           {visible.map((item) => {
             const { node, width, height, lines, textLeft, textWidth, lineHeight } = item,

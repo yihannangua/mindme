@@ -915,6 +915,13 @@ button.primary:hover {
   pointer-events: stroke;
   cursor: pointer;
 }
+.node-link-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20;
+  pointer-events: stroke;
+  cursor: pointer;
+}
 .node-link.selected {
   stroke: #326b98;
   stroke-width: 3;
