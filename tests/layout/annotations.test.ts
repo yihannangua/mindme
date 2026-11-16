@@ -48,7 +48,9 @@ describe('连线与概括几何', () => {
     expect(geometry.bottom).toBe(92)
     expect(geometry.anchorYs).toEqual([-60, 60])
     expect(geometry.bracketPath).toContain('V')
-    expect(geometry.bracketPath.split('M').length - 1).toBe(4)
+    expect(geometry.bracketPath.split('M').length - 1).toBe(2)
+    expect(geometry.bracketPath.split('H').length - 1).toBe(1)
+    expect(geometry.bracketPath.split('C').length - 1).toBe(4)
     expect(geometry.y).toBe(0)
   })
 
@@ -69,6 +71,8 @@ describe('连线与概括几何', () => {
     expect(geometry.top).toBe(-92)
     expect(geometry.bottom).toBe(92)
     expect(geometry.bracketPath).toContain('V')
+    expect(geometry.bracketPath.split('M').length - 1).toBe(2)
+    expect(geometry.bracketPath.split('H').length - 1).toBe(1)
   })
 
   it('括号上下边缘超过单个锚点的高度，避免与节点重叠', () => {
@@ -79,5 +83,7 @@ describe('连线与概括几何', () => {
     expect(geometry.bottom - geometry.top).toBeGreaterThan(36)
     expect(geometry.anchorYs).toEqual([20])
     expect(geometry.bracketPath).toContain('H')
+    expect(geometry.bracketPath.split('M').length - 1).toBe(2)
+    expect(geometry.bracketPath.split('H').length - 1).toBe(1)
   })
 })

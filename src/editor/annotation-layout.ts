@@ -96,13 +96,12 @@ export function summaryGeometry(
     top = Math.min(...anchors.map((anchor) => anchor.y - anchor.height / 2)) - padding,
     bottom = Math.max(...anchors.map((anchor) => anchor.y + anchor.height / 2)) + padding,
     centerY = (top + bottom) / 2,
+    cap = Math.min(16, Math.max(8, (bottom - top) / 6)),
     bracketX = side === 1 ? right + 34 : left - 34,
     summaryEdge = side === 1 ? bracketX + 42 : bracketX - 42,
     x = side === 1 ? summaryEdge + width / 2 : summaryEdge - width / 2,
-    stubs = anchors.map((anchor) => {
-      const anchorX = anchor.x + (side * anchor.width) / 2
-      return `M ${anchorX} ${anchor.y} H ${bracketX}`
-    })
+    capStartX = bracketX - side * cap,
+    capEndX = bracketX + side * cap
   return {
     x,
     y: centerY,
@@ -112,9 +111,14 @@ export function summaryGeometry(
     top,
     bottom,
     bracketPath: [
-      ...stubs,
-      `M ${bracketX} ${top} V ${bottom}`,
-      `M ${bracketX} ${centerY} H ${summaryEdge}`,
+      `M ${capStartX} ${top}`,
+      `C ${bracketX - side * cap * 0.45} ${top}, ${bracketX} ${top + cap * 0.35}, ${bracketX} ${top + cap}`,
+      `V ${centerY - cap}`,
+      `C ${bracketX} ${centerY - cap * 0.55}, ${capEndX} ${centerY - cap * 0.35}, ${capEndX} ${centerY}`,
+      `C ${capEndX} ${centerY + cap * 0.35}, ${bracketX} ${centerY + cap * 0.55}, ${bracketX} ${centerY + cap}`,
+      `V ${bottom - cap}`,
+      `C ${bracketX} ${bottom - cap * 0.35}, ${bracketX - side * cap * 0.45} ${bottom}, ${capStartX} ${bottom}`,
+      `M ${capEndX} ${centerY} H ${summaryEdge}`,
     ].join(' '),
     bracketX,
     summaryLeft: summaryEdge,

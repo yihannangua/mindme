@@ -941,6 +941,8 @@ button.primary:hover {
   fill: none;
   stroke: #6f8797;
   stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   pointer-events: none;
 }
 .summary-node {
