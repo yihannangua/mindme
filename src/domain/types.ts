@@ -79,12 +79,26 @@ export interface MindNode {
   fontSize?: number | null
   backgroundColor?: string | null
 }
+export interface NodeLink {
+  id: string
+  fromId: string
+  toId: string
+  text: string
+}
+export interface NodeSummary {
+  id: string
+  nodeIds: string[]
+  text: string
+}
 export interface MapContent {
   id: string
   title: string
   rootId: string
   nodes: Record<string, MindNode>
   deletedAt: number | null
+  // 旧空间没有这两个字段；读取时按空数组处理，写入后进入 v1 字段差异。
+  links?: NodeLink[]
+  summaries?: NodeSummary[]
 }
 export interface HistorySnapshot {
   schemaVersion: 1

@@ -11,7 +11,7 @@ import {
   type Space,
 } from './types'
 
-const mapFields = ['title', 'deletedAt', 'historyDirtySince'] as const
+const mapFields = ['title', 'deletedAt', 'historyDirtySince', 'links', 'summaries'] as const
 const nodeFields = [
   'parentId',
   'order',

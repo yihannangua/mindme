@@ -907,6 +907,95 @@ button.primary:hover {
   pointer-events: none;
   opacity: 0.86;
 }
+.node-link {
+  fill: none;
+  stroke: #7893a4;
+  stroke-width: 1.8;
+  opacity: 0.82;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.node-link.selected {
+  stroke: #326b98;
+  stroke-width: 3;
+  opacity: 1;
+}
+.node-link-label {
+  cursor: text;
+}
+.node-link-label rect {
+  fill: #fff;
+  stroke: #b8c7d0;
+  stroke-width: 1;
+  filter: drop-shadow(0 1px 2px #33445510);
+}
+.node-link-label.selected rect {
+  stroke: #326b98;
+  stroke-width: 2;
+}
+.node-link-label text {
+  fill: #536b7a;
+  font-size: 12px;
+}
+.summary-bracket {
+  fill: none;
+  stroke: #6f8797;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.summary-node {
+  cursor: text;
+}
+.summary-node rect {
+  fill: #fff;
+  stroke: #718897;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 2px #33445510);
+}
+.summary-node.selected rect {
+  stroke: #326b98;
+  stroke-width: 2.7;
+}
+.summary-node text {
+  fill: #405563;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+}
+.mind-node.link-source > rect {
+  stroke: #c57b32 !important;
+  stroke-width: 2.8 !important;
+  stroke-dasharray: 6 3;
+}
+.canvas.linking {
+  cursor: crosshair;
+}
+.annotation-editor {
+  position: absolute;
+  z-index: 7;
+  transform: translate(-50%, -50%);
+  padding: 3px;
+  border: 1px solid #9bb5c5;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 6px 20px #29364024;
+}
+.annotation-editor input {
+  width: 210px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 4px;
+  outline: none;
+  color: #314957;
+  font-size: 13px;
+  background: #f7fafb;
+}
+.canvas[data-style='compact'] .node-link {
+  stroke-width: 1.2;
+}
+.canvas[data-style='compact'] .summary-node text {
+  font-size: 11px;
+}
 .mind-node {
   cursor: default;
 }

@@ -44,6 +44,19 @@ describe('双设备同步协议', () => {
       expect(first(merged.state.space).nodes[nodeId].markers[category]).toBe(value)
     }
   })
+  it('连线和概括作为地图字段合并', () => {
+    const { state, space, nodeId } = setup(),
+      map = first(space),
+      linked = edit(space, { type: 'link-add', fromId: map.rootId, toId: nodeId, text: '依赖' }),
+      a = mergeOperation(state, operation(space, linked, 'A', 3000, 1, 1), 10000)
+    expect(a.result.status).toBe('accepted')
+    expect(first(a.state.space).links).toEqual(first(linked).links)
+
+    const summarized = edit(linked, { type: 'summary-add', nodeIds: [nodeId] }),
+      b = mergeOperation(a.state, operation(linked, summarized, 'A', 4000, 2, a.state.seq), 10000)
+    expect(b.result.status).toBe('accepted')
+    expect(first(b.state.space).summaries).toEqual(first(summarized).summaries)
+  })
   it('旧离线修改晚上传也不能覆盖新修改', () => {
     const { state, space, nodeId } = setup()
     const newer = edit(space, { type: 'text', nodeId, text: '较新' }),

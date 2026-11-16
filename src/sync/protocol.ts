@@ -103,6 +103,8 @@ export function validateOperation(op: Operation): boolean {
               'history',
               'history-add',
               'historyDirtySince',
+              'links',
+              'summaries',
               'tab:open',
               'tab:pinned',
               'tab:order',

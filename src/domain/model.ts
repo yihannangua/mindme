@@ -1,3 +1,4 @@
+import { summaryAnchorIds } from './annotations'
 import {
   assert,
   clone,
@@ -131,6 +132,48 @@ export function validateMap(map: MapContent) {
     for (const child of index.get(id) ?? []) stack.push([child, depth + 1])
   }
   assert(seen.size === nodes.length, '存在孤立节点或循环引用')
+  if (map.links !== undefined) {
+    assert(Array.isArray(map.links) && map.links.length <= LIMITS.nodes, '连线数据不合法')
+    const ids = new Set<string>(),
+      pairs = new Set<string>()
+    for (const link of map.links) {
+      assert(
+        link &&
+          safeId(link.id) &&
+          safeId(link.fromId) &&
+          safeId(link.toId) &&
+          link.fromId !== link.toId &&
+          typeof link.text === 'string' &&
+          link.text.length <= LIMITS.text,
+        '连线数据不合法',
+      )
+      assert(own(map.nodes, link.fromId) && own(map.nodes, link.toId), '连线引用了不存在的节点')
+      const pair = [link.fromId, link.toId].sort().join('/')
+      assert(!ids.has(link.id) && !pairs.has(pair), '连线标识冲突或重复')
+      ids.add(link.id)
+      pairs.add(pair)
+    }
+  }
+  if (map.summaries !== undefined) {
+    assert(Array.isArray(map.summaries) && map.summaries.length <= LIMITS.nodes, '概括数据不合法')
+    const ids = new Set<string>()
+    for (const summary of map.summaries) {
+      assert(
+        summary &&
+          safeId(summary.id) &&
+          !ids.has(summary.id) &&
+          typeof summary.text === 'string' &&
+          summary.text.length <= LIMITS.text &&
+          Array.isArray(summary.nodeIds) &&
+          summary.nodeIds.length > 0 &&
+          summary.nodeIds.length <= nodes.length &&
+          new Set(summary.nodeIds).size === summary.nodeIds.length,
+        '概括数据不合法',
+      )
+      assert(summaryAnchorIds(map, summary.nodeIds), '概括只能覆盖同一父节点下连续相邻的节点')
+      ids.add(summary.id)
+    }
+  }
 }
 export function validateSpace(space: Space) {
   assert(
@@ -209,6 +252,8 @@ export function createMap(space: Space, title: string, ctx: Context): Space {
     title: title.trim(),
     rootId,
     nodes: { [rootId]: makeNode(rootId, null, title.trim()) },
+    links: [],
+    summaries: [],
     deletedAt: null,
     updatedAt: ctx.now,
     revision: 0,

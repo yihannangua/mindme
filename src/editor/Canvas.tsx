@@ -17,10 +17,18 @@ import {
   type MapContent,
   type MarkerCategory,
   type MindMap,
+  type MindNode,
 } from '../domain/types'
 import type { ImportDraft } from '../importers/outline'
 import { BRANCHES_MIME, branchText, copyBranches } from '../importers/backup'
-import { edgePath, layoutTree, type TextMeasure } from '../layout/tree'
+import {
+  edgePath,
+  layoutTree,
+  measureNode,
+  type LayoutNode,
+  type TextMeasure,
+} from '../layout/tree'
+import { linkGeometry, summaryGeometry } from './annotation-layout'
 import { appStore } from '../app/store'
 import { MarkerIcon } from '../components/MarkerIcon'
 import { markerCategoryLabel, markerLabel } from '../persistence/marker-usage'
@@ -47,6 +55,9 @@ interface Props {
   focusRequest: number
   fitRequest: number
   exitFullscreen?: () => void
+  linkSource?: string | null
+  onLinkTarget?: (id: string) => void
+  onLinkCancel?: () => void
 }
 function scopedMap(map: MindMap, scopeNodeId: string | null | undefined): MapContent {
   if (!scopeNodeId || scopeNodeId === map.rootId || !map.nodes[scopeNodeId]) return map
@@ -94,6 +105,9 @@ export function Canvas({
   focusRequest,
   fitRequest,
   exitFullscreen,
+  linkSource,
+  onLinkTarget,
+  onLinkCancel,
 }: Props) {
   const selectedId = selection.activeId,
     selectedIds = useMemo(() => new Set(selection.ids), [selection.ids])
@@ -134,6 +148,15 @@ export function Canvas({
     [styleMenuOpen, setStyleMenuOpen] = useState(false),
     [panning, setPanning] = useState(false)
   const [edit, setEdit] = useState<{ id: string; text: string; original: string } | null>(null)
+  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null)
+  const [selectedSummaryId, setSelectedSummaryId] = useState<string | null>(null)
+  const [annotationEditor, setAnnotationEditor] = useState<{
+    kind: 'link' | 'summary'
+    id: string
+    text: string
+    original: string
+  } | null>(null)
+  const cancelAnnotation = useRef(false)
   useEffect(() => {
     if (!markerEditor) return
     const outside = (event: globalThis.PointerEvent) => {
@@ -197,6 +220,32 @@ export function Canvas({
       }),
     [viewMap, edit?.id, edit?.text, editSize, measureText, canvasStyle],
   )
+  const summaryLayouts = useMemo(() => {
+    const summaries = map.summaries ?? []
+    return summaries.flatMap((summary) => {
+      const anchors = summary.nodeIds.map((id) => layout.byId.get(id))
+      if (anchors.some((anchor) => !anchor)) return []
+      const summaryNode: MindNode = {
+        id: summary.id,
+        parentId: map.rootId,
+        order: 0,
+        text: summary.text,
+        collapsed: false,
+        markers: {},
+        position: null,
+        side: 0,
+      }
+      const metric = measureNode(summaryNode, measureText, canvasStyle)
+      return [
+        {
+          summary,
+          ...summaryGeometry(anchors as LayoutNode[], metric.width, metric.height),
+          lines: metric.lines,
+          lineHeight: metric.lineHeight,
+        },
+      ]
+    })
+  }, [map.summaries, map.rootId, layout, measureText, canvasStyle])
   const changeCanvasStyle = (style: CanvasStyle) => {
     setCanvasStyle(style)
     setStyleMenuOpen(false)
@@ -254,12 +303,13 @@ export function Canvas({
         (size.height - 120) / (layout.height + 20),
       ),
     )
-    const minX = Math.min(...layout.nodes.map((n) => n.x - n.width / 2)),
-      maxX = Math.max(...layout.nodes.map((n) => n.x + n.width / 2)),
-      minY = Math.min(...layout.nodes.map((n) => n.y - n.height / 2)),
-      maxY = Math.max(...layout.nodes.map((n) => n.y + n.height / 2))
+    const boxes = [...layout.nodes, ...summaryLayouts],
+      minX = Math.min(...boxes.map((n) => n.x - n.width / 2)),
+      maxX = Math.max(...boxes.map((n) => n.x + n.width / 2)),
+      minY = Math.min(...boxes.map((n) => n.y - n.height / 2)),
+      maxY = Math.max(...boxes.map((n) => n.y + n.height / 2))
     setView({ x: (-(minX + maxX) / 2) * zoom, y: (-(minY + maxY) / 2) * zoom, zoom })
-  }, [size, layout])
+  }, [size, layout, summaryLayouts])
   const fitRef = useRef(fit)
   fitRef.current = fit
   useLayoutEffect(() => {
@@ -335,6 +385,58 @@ export function Canvas({
     },
     [map, select],
   )
+  const openLinkEditor = useCallback(
+    (id: string) => {
+      const link = (map.links ?? []).find((item) => item.id === id)
+      if (!link) return
+      cancelAnnotation.current = false
+      setSelectedLinkId(id)
+      setSelectedSummaryId(null)
+      setAnnotationEditor({ kind: 'link', id, text: link.text, original: link.text })
+      select(null)
+    },
+    [map, select],
+  )
+  const openSummaryEditor = useCallback(
+    (id: string) => {
+      const summary = (map.summaries ?? []).find((item) => item.id === id)
+      if (!summary) return
+      cancelAnnotation.current = false
+      setSelectedSummaryId(id)
+      setSelectedLinkId(null)
+      setAnnotationEditor({ kind: 'summary', id, text: summary.text, original: summary.text })
+      select(null)
+    },
+    [map, select],
+  )
+  const finishAnnotationEdit = useCallback(
+    (cancel = false) => {
+      const editor = annotationEditor
+      if (!editor) return
+      if (cancel) cancelAnnotation.current = true
+      setAnnotationEditor(null)
+      if (cancelAnnotation.current || editor.text === editor.original) return
+      const action: Command =
+        editor.kind === 'link'
+          ? { type: 'link-text', linkId: editor.id, text: editor.text }
+          : { type: 'summary-text', summaryId: editor.id, text: editor.text }
+      void command(action).catch(() => undefined)
+    },
+    [annotationEditor, command],
+  )
+  useEffect(() => {
+    if (selectedLinkId && !(map.links ?? []).some((link) => link.id === selectedLinkId))
+      setSelectedLinkId(null)
+    if (selectedSummaryId && !(map.summaries ?? []).some((item) => item.id === selectedSummaryId))
+      setSelectedSummaryId(null)
+    if (annotationEditor) {
+      const exists =
+        annotationEditor.kind === 'link'
+          ? (map.links ?? []).some((link) => link.id === annotationEditor.id)
+          : (map.summaries ?? []).some((item) => item.id === annotationEditor.id)
+      if (!exists) setAnnotationEditor(null)
+    }
+  }, [map, selectedLinkId, selectedSummaryId, annotationEditor])
   const handledFocusRequest = useRef(focusRequest)
   useLayoutEffect(() => {
     if (handledFocusRequest.current === focusRequest) return
@@ -430,6 +532,29 @@ export function Canvas({
       return
     const mod = event.metaKey || event.ctrlKey,
       key = event.key.toLowerCase()
+    if (linkSource && key === 'escape') {
+      event.preventDefault()
+      onLinkCancel?.()
+      return
+    }
+    if ((selectedLinkId || selectedSummaryId) && (key === 'backspace' || key === 'delete')) {
+      const action: Command = selectedLinkId
+        ? { type: 'link-delete', linkId: selectedLinkId }
+        : { type: 'summary-delete', summaryId: selectedSummaryId! }
+      event.preventDefault()
+      setSelectedLinkId(null)
+      setSelectedSummaryId(null)
+      setAnnotationEditor(null)
+      void command(action).catch(() => undefined)
+      return
+    }
+    if (key === 'escape' && (selectedLinkId || selectedSummaryId)) {
+      event.preventDefault()
+      setSelectedLinkId(null)
+      setSelectedSummaryId(null)
+      setAnnotationEditor(null)
+      return
+    }
     if (mod && key === 'z') {
       event.preventDefault()
       history(event.shiftKey ? 'redo' : 'undo')
@@ -537,6 +662,25 @@ export function Canvas({
       (event.target instanceof Element && event.target.closest('textarea,button,.fold-control'))
     )
       return
+    if (linkSource && id) {
+      event.preventDefault()
+      event.stopPropagation()
+      select(id)
+      if (id === linkSource) {
+        notify('不能把节点连接到自身')
+        return
+      }
+      onLinkTarget?.(id)
+      container.current?.focus({ preventScroll: true })
+      return
+    }
+    if (id) {
+      setSelectedLinkId(null)
+      setSelectedSummaryId(null)
+    } else {
+      setSelectedLinkId(null)
+      setSelectedSummaryId(null)
+    }
     const nodeIds =
       id && selectedIds.has(id) && selection.ids.length > 1 ? selection.ids : id ? [id] : []
     const mode = id ? 'node' : 'pan'
@@ -680,9 +824,39 @@ export function Canvas({
         Math.abs(item.y * view.zoom + view.y) < size.height / 2 + item.height * view.zoom),
   )
   const visibleIds = new Set(visible.map((item) => item.node.id))
+  const displayLinks = (map.links ?? []).flatMap((link) => {
+    const from = displayById.get(link.fromId),
+      to = displayById.get(link.toId)
+    if (!from || !to || !visibleIds.has(from.node.id) || !visibleIds.has(to.node.id)) return []
+    return [{ link, geometry: linkGeometry(from, to) }]
+  })
+  const visibleSummaries = summaryLayouts.filter((item) =>
+    item.summary.nodeIds.every((id) => visibleIds.has(id)),
+  )
+  const annotationPosition = annotationEditor
+    ? annotationEditor.kind === 'link'
+      ? (() => {
+          const item = displayLinks.find(({ link }) => link.id === annotationEditor.id)
+          return item
+            ? {
+                x: size.width / 2 + view.x + item.geometry.labelX * view.zoom,
+                y: size.height / 2 + view.y + item.geometry.labelY * view.zoom,
+              }
+            : null
+        })()
+      : (() => {
+          const item = summaryLayouts.find(({ summary }) => summary.id === annotationEditor.id)
+          return item
+            ? {
+                x: size.width / 2 + view.x + item.x * view.zoom,
+                y: size.height / 2 + view.y + item.y * view.zoom,
+              }
+            : null
+        })()
+    : null
   return (
     <div
-      className={`canvas${panning ? ' panning' : ''}`}
+      className={`canvas${panning ? ' panning' : ''}${linkSource ? ' linking' : ''}`}
       data-style={canvasStyle}
       ref={container}
       tabIndex={0}
@@ -727,6 +901,28 @@ export function Canvas({
                 d={edgePath(displayById.get(item.node.parentId!)!, item, canvasStyle)}
               />
             ))}
+          {visibleSummaries.map(({ summary, bracketPath }) => (
+            <path
+              key={`summary-bracket-${summary.id}`}
+              className="summary-bracket"
+              d={bracketPath}
+            />
+          ))}
+          {displayLinks.map(({ link, geometry }) => (
+            <path
+              key={`link-${link.id}`}
+              className={`node-link ${selectedLinkId === link.id ? 'selected' : ''}`}
+              d={geometry.d}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                select(null)
+                setSelectedSummaryId(null)
+                setSelectedLinkId(link.id)
+                container.current?.focus({ preventScroll: true })
+              }}
+            />
+          ))}
           {visible.map((item) => {
             const { node, width, height, lines, textLeft, textWidth, lineHeight } = item,
               root = node.parentId === null,
@@ -743,7 +939,7 @@ export function Canvas({
             return (
               <g
                 key={node.id}
-                className={`mind-node ${root ? 'root-node' : ''} ${selectedIds.has(node.id) ? 'selected' : ''} ${preview?.target === node.id ? 'drop-target' : ''}`}
+                className={`mind-node ${root ? 'root-node' : ''} ${selectedIds.has(node.id) ? 'selected' : ''} ${preview?.target === node.id ? 'drop-target' : ''} ${linkSource === node.id ? 'link-source' : ''}`}
                 data-node-id={node.id}
                 data-parent-id={node.parentId ?? ''}
                 role="button"
@@ -907,8 +1103,94 @@ export function Canvas({
               </g>
             )
           })}
+          {displayLinks.map(({ link, geometry }) => {
+            const width = Math.max(48, link.text.length * 13 + 20)
+            return (
+              <g
+                key={`link-label-${link.id}`}
+                className={`node-link-label ${selectedLinkId === link.id ? 'selected' : ''}`}
+                data-link-id={link.id}
+                role="button"
+                aria-label={`编辑连线：${link.text}`}
+                transform={`translate(${geometry.labelX} ${geometry.labelY})`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openLinkEditor(link.id)
+                }}
+              >
+                <rect x={-width / 2} y={-12} width={width} height={24} rx={7} />
+                <text textAnchor="middle" dominantBaseline="central">
+                  {link.text}
+                </text>
+              </g>
+            )
+          })}
+          {visibleSummaries.map(({ summary, x, y, width, height, lines, lineHeight }) => (
+            <g
+              key={`summary-${summary.id}`}
+              className={`summary-node ${selectedSummaryId === summary.id ? 'selected' : ''}`}
+              data-summary-id={summary.id}
+              data-anchor-count={summary.nodeIds.length}
+              role="button"
+              aria-label={`编辑概括：${summary.text}`}
+              transform={`translate(${x - width / 2} ${y - height / 2})`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                openSummaryEditor(summary.id)
+              }}
+            >
+              <rect width={width} height={height} rx={8} />
+              <text textAnchor="middle" dominantBaseline="central">
+                {lines.map((line, index) => (
+                  <tspan
+                    key={index}
+                    x={width / 2}
+                    y={height / 2 + (index - (lines.length - 1) / 2) * lineHeight}
+                  >
+                    {line || '\u200b'}
+                  </tspan>
+                ))}
+              </text>
+            </g>
+          ))}
         </g>
       </svg>
+      {annotationEditor && annotationPosition && (
+        <div
+          className="annotation-editor"
+          style={{
+            left: Math.max(80, Math.min(Math.max(80, size.width - 80), annotationPosition.x)),
+            top: Math.max(32, Math.min(Math.max(32, size.height - 32), annotationPosition.y)),
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <input
+            autoFocus
+            aria-label={annotationEditor.kind === 'link' ? '编辑连线文字' : '编辑概括文字'}
+            value={annotationEditor.text}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => {
+              const text = event.target.value
+              setAnnotationEditor((current) => (current ? { ...current, text } : current))
+            }}
+            onBlur={() => finishAnnotationEdit(false)}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                cancelAnnotation.current = true
+                event.currentTarget.blur()
+              } else if (event.key === 'Enter') {
+                event.preventDefault()
+                event.currentTarget.blur()
+              }
+            }}
+          />
+        </div>
+      )}
       {markerEditor &&
         (() => {
           const editor = markerEditor,
@@ -970,6 +1252,7 @@ export function Canvas({
             </div>
           )
         })()}
+      {linkSource && <div className="attach-hint">连线中：点击目标节点完成连线；按 Esc 取消</div>}
       {preview?.target && (
         <div className="attach-hint">
           松手后

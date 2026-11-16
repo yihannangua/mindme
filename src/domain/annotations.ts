@@ -1,0 +1,61 @@
+import { LIMITS, type MapContent, type NodeLink, type NodeSummary } from './types'
+
+export const DEFAULT_LINK_TEXT = '关系'
+export const DEFAULT_SUMMARY_TEXT = '概要'
+
+export const mapLinks = (map: MapContent): NodeLink[] => map.links ?? []
+export const mapSummaries = (map: MapContent): NodeSummary[] => map.summaries ?? []
+
+const orderedSiblings = (map: MapContent, parentId: string) =>
+  Object.values(map.nodes)
+    .filter((node) => node.parentId === parentId)
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+
+/**
+ * 概括锚点必须是同一父节点下、顺序相邻的节点。
+ * 返回按树顺序排好的节点标识；不满足条件时返回 null。
+ */
+export function summaryAnchorIds(map: MapContent, requested: string[]): string[] | null {
+  const ids = [...new Set(requested)]
+  if (!ids.length || ids.length > LIMITS.nodes) return null
+  const nodes = ids.map((id) => map.nodes[id])
+  if (nodes.some((node) => !node)) return null
+  const parentId = nodes[0].parentId
+  if (!parentId) return null
+  if (nodes.some((node) => node.parentId !== parentId)) return null
+  const siblings = orderedSiblings(map, parentId)
+  const positions = ids.map((id) => siblings.findIndex((node) => node.id === id))
+  if (positions.some((position) => position < 0)) return null
+  positions.sort((a, b) => a - b)
+  if (positions.some((position, index) => index > 0 && position !== positions[index - 1] + 1))
+    return null
+  return ids.sort(
+    (a, b) => (map.nodes[a].order ?? 0) - (map.nodes[b].order ?? 0) || a.localeCompare(b),
+  )
+}
+
+export function validSummaryAnchors(map: MapContent, ids: string[]): boolean {
+  return summaryAnchorIds(map, ids) !== null
+}
+
+export function annotationText(text: string, fallback: string): string {
+  const trimmed = text.trim()
+  return trimmed || fallback
+}
+
+/**
+ * 节点结构变化后清理已经不成立的连线和概括。
+ * 连线两端仍存在即可；概括要求全部锚点仍属于同一父节点且保持相邻。
+ */
+export function pruneAnnotations(map: MapContent) {
+  if (map.links) {
+    const links = map.links.filter(
+      (link) => map.nodes[link.fromId] && map.nodes[link.toId] && link.fromId !== link.toId,
+    )
+    if (links.length !== map.links.length) map.links = links
+  }
+  if (map.summaries) {
+    const summaries = map.summaries.filter((summary) => validSummaryAnchors(map, summary.nodeIds))
+    if (summaries.length !== map.summaries.length) map.summaries = summaries
+  }
+}

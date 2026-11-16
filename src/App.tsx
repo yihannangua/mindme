@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 import { appStore, context, message } from './app/store'
 import type { Command } from './domain/commands'
-import { createMap, uniqueName } from './domain/model'
+import { children, createMap, uniqueName } from './domain/model'
 import {
   clone,
   MARKERS,
@@ -147,6 +147,7 @@ export default function App() {
       return next
     })
   }, [])
+  const [linkSource, setLinkSource] = useState<string | null>(null)
   const [dialog, setDialog] = useState(''),
     [toast, setToast] = useState(''),
     [editRequest, setEditRequest] = useState(0),
@@ -238,6 +239,12 @@ export default function App() {
       : undefined
   const node = selectedId ? map?.nodes[selectedId] : undefined
   const activePane = workspace.panes[workspace.activePaneId]
+  useEffect(() => {
+    setLinkSource(null)
+  }, [activeId])
+  useEffect(() => {
+    if (linkSource && !map?.nodes[linkSource]) setLinkSource(null)
+  }, [map, linkSource])
   useEffect(() => {
     const activePane = workspace.panes[workspace.activePaneId]
     if (
@@ -374,6 +381,50 @@ export default function App() {
     })
   }
   // 适应请求按分区独立递增，切换活动分区不改变其他画布收到的请求。
+  const toggleLink = () => {
+    if (linkSource) {
+      setLinkSource(null)
+      notify('已取消连线')
+      return
+    }
+    if (!node) return
+    setLinkSource(node.id)
+    notify('连线模式：点击目标节点完成连线；按 Esc 取消')
+  }
+  const finishLink = (targetId: string) => {
+    const source = linkSource
+    setLinkSource(null)
+    if (!source || source === targetId) return
+    void guard(async () => {
+      await command({ type: 'link-add', fromId: source, toId: targetId })
+      notify('已添加连线，点击连线文字可修改')
+    })
+  }
+  const summarize = () => {
+    if (!map) return
+    let nodeIds: string[]
+    if (selection.ids.length > 1) nodeIds = selection.ids
+    else if (node) {
+      const childIds = children(map, node.id).map((child) => child.id)
+      if (!childIds.length) {
+        notify('该节点没有子节点可概括')
+        return
+      }
+      if (node.collapsed) {
+        notify('请先展开该节点再概括子节点')
+        return
+      }
+      nodeIds = childIds
+    } else return
+    void guard(async () => {
+      await command({ type: 'summary-add', nodeIds })
+      setFitRequests((current) => ({
+        ...current,
+        [workspace.activePaneId]: (current[workspace.activePaneId] ?? 0) + 1,
+      }))
+      notify('已添加概括，点击概括文字可修改')
+    })
+  }
   const requestFit = useCallback((paneId: string) => {
     setFitRequests((current) => ({ ...current, [paneId]: (current[paneId] ?? 0) + 1 }))
   }, [])
@@ -1077,6 +1128,21 @@ export default function App() {
               <CornerDownRight size={14} />
               下钻
             </button>
+            <button
+              aria-pressed={!!linkSource}
+              disabled={!node && !linkSource}
+              title={linkSource ? '取消连线模式' : '选择目标节点，自动生成可编辑文字的曲线连线'}
+              onClick={toggleLink}
+            >
+              {linkSource ? '取消连线' : '连线'}
+            </button>
+            <button
+              disabled={!node}
+              title="为选中节点的全部子节点，或多个连续同级节点添加概括"
+              onClick={summarize}
+            >
+              概括
+            </button>
             <button disabled={!map} title="均衡分配左右分支并整理整张脑图" onClick={autoLayout}>
               自动布局
             </button>
@@ -1149,6 +1215,14 @@ export default function App() {
               canRedo={state.canRedo}
               markerUsage={markerUsage}
               onMarker={(category, value) => applyMarker(category, value, true)}
+              linkSource={linkSource}
+              onLinkTarget={finishLink}
+              onLinkCancel={() => {
+                setLinkSource(null)
+                notify('已取消连线')
+              }}
+              onLinkStart={toggleLink}
+              onSummarize={summarize}
               onFit={requestFit}
               paste={paste}
               save={save}
@@ -1401,6 +1475,14 @@ export default function App() {
               >
                 子树全部折叠 / 展开
               </button>
+              <div>
+                <button disabled={!node} onClick={toggleLink}>
+                  {linkSource ? '取消连线' : '连线'}
+                </button>
+                <button disabled={!node} onClick={summarize}>
+                  概括
+                </button>
+              </div>
               <div>
                 <button
                   disabled={!node?.parentId}

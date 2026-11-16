@@ -1,9 +1,17 @@
 import { selectedForest } from './branches'
 import { balanceMap } from '../layout/balance'
+import {
+  annotationText,
+  DEFAULT_LINK_TEXT,
+  DEFAULT_SUMMARY_TEXT,
+  pruneAnnotations,
+  summaryAnchorIds,
+} from './annotations'
 import { assertName, children, makeNode, subtree, validateSpace } from './model'
 import {
   assert,
   clone,
+  LIMITS,
   MARKERS,
   type Context,
   type MarkerCategory,
@@ -34,6 +42,12 @@ export type Command =
         backgroundColor?: string | null
       }
     }
+  | { type: 'link-add'; fromId: string; toId: string; text?: string }
+  | { type: 'link-text'; linkId: string; text: string }
+  | { type: 'link-delete'; linkId: string }
+  | { type: 'summary-add'; nodeIds: string[]; text?: string }
+  | { type: 'summary-text'; summaryId: string; text: string }
+  | { type: 'summary-delete'; summaryId: string }
   | { type: 'layout' }
   | { type: 'trash' }
   | { type: 'untrash' }
@@ -233,6 +247,68 @@ export function execute(
       for (const id of ids) Object.assign(map.nodes[id], command.style)
       break
     }
+    case 'link-add': {
+      const from = map.nodes[command.fromId],
+        to = map.nodes[command.toId]
+      assert(from && to && from.id !== to.id, '请选择两个不同的节点')
+      assert(
+        !(map.links ?? []).some(
+          (link) =>
+            (link.fromId === from.id && link.toId === to.id) ||
+            (link.fromId === to.id && link.toId === from.id),
+        ),
+        '两个节点之间已有连线',
+      )
+      const text = annotationText(command.text ?? DEFAULT_LINK_TEXT, DEFAULT_LINK_TEXT)
+      assert(text.length <= LIMITS.text, '连线文字过长')
+      map.links = [...(map.links ?? []), { id: ctx.id(), fromId: from.id, toId: to.id, text }]
+      break
+    }
+    case 'link-text': {
+      const link = (map.links ?? []).find((item) => item.id === command.linkId)
+      assert(link, '连线不存在')
+      const text = annotationText(command.text, DEFAULT_LINK_TEXT)
+      assert(text.length <= LIMITS.text, '连线文字过长')
+      link.text = text
+      break
+    }
+    case 'link-delete':
+      assert(
+        (map.links ?? []).some((link) => link.id === command.linkId),
+        '连线不存在',
+      )
+      map.links = (map.links ?? []).filter((link) => link.id !== command.linkId)
+      break
+    case 'summary-add': {
+      const nodeIds = summaryAnchorIds(map, command.nodeIds)
+      assert(nodeIds, '概括只支持同一父节点下连续相邻的节点')
+      const anchorKey = [...nodeIds].sort().join('/')
+      assert(
+        !(map.summaries ?? []).some(
+          (summary) => [...summary.nodeIds].sort().join('/') === anchorKey,
+        ),
+        '这些节点已有概括',
+      )
+      const text = annotationText(command.text ?? DEFAULT_SUMMARY_TEXT, DEFAULT_SUMMARY_TEXT)
+      assert(text.length <= LIMITS.text, '概括文字过长')
+      map.summaries = [...(map.summaries ?? []), { id: ctx.id(), nodeIds, text }]
+      break
+    }
+    case 'summary-text': {
+      const summary = (map.summaries ?? []).find((item) => item.id === command.summaryId)
+      assert(summary, '概括不存在')
+      const text = annotationText(command.text, DEFAULT_SUMMARY_TEXT)
+      assert(text.length <= LIMITS.text, '概括文字过长')
+      summary.text = text
+      break
+    }
+    case 'summary-delete':
+      assert(
+        (map.summaries ?? []).some((summary) => summary.id === command.summaryId),
+        '概括不存在',
+      )
+      map.summaries = (map.summaries ?? []).filter((summary) => summary.id !== command.summaryId)
+      break
     case 'layout':
       if (!balanceMap(map)) return { space }
       break
@@ -259,9 +335,13 @@ export function execute(
       assertName(next, target.content.title, mapId)
       saveVersion(map, ctx, 'restore', true)
       Object.assign(map, target.content, { deletedAt: null })
+      map.links = target.content.links ? clone(target.content.links) : undefined
+      map.summaries = target.content.summaries ? clone(target.content.summaries) : undefined
       break
     }
   }
+  // 删除节点、排序或挂接后，失效的连线和不再连续的概括随同一命令清理。
+  pruneAnnotations(map)
   map.updatedAt = ctx.now
   map.historyDirtySince ??= ctx.now
   validateSpace(next)
@@ -275,12 +355,15 @@ export function saveVersion(
 ) {
   if (!force && map.historyDirtySince === null) return
   const { id, title, rootId, nodes, deletedAt } = map
+  const content: MapContent = { id, title, rootId, nodes, deletedAt }
+  if (map.links) content.links = clone(map.links)
+  if (map.summaries) content.summaries = clone(map.summaries)
   map.history.push({
     schemaVersion: 1,
     id: ctx.id(),
     at: ctx.now,
     reason,
-    content: clone({ id, title, rootId, nodes, deletedAt }),
+    content: clone(content),
   })
   map.history = map.history.slice(-10)
   map.historyDirtySince = null
