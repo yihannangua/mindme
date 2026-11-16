@@ -49,11 +49,12 @@ describe('连线与概括领域命令', () => {
     )
   })
 
-  it('为连续子节点创建概括、修改文字并删除', () => {
+  it('为连续子节点创建概括节点、修改文字并删除', () => {
     let { space, ids } = withChildren()
     space = edit(space, { type: 'summary-add', nodeIds: [ids[1], ids[0]] })
-    const summary = first(space).summaries![0]
-    expect(summary.nodeIds).toEqual([ids[0], ids[1]])
+    const summary = Object.values(first(space).nodes).find((node) => node.summaryOf)!
+    expect(summary.summaryOf).toEqual([ids[0], ids[1]])
+    expect(summary.parentId).toBeNull()
     expect(summary.text).toBe('概要')
 
     space = edit(space, {
@@ -61,9 +62,11 @@ describe('连线与概括领域命令', () => {
       summaryId: summary.id,
       text: '这两项',
     })
-    expect(first(space).summaries![0].text).toBe('这两项')
+    expect(first(space).nodes[summary.id].text).toBe('这两项')
+    space = edit(space, { type: 'add', nodeId: summary.id, kind: 'child', text: '概括子节点' })
+    expect(children(first(space), summary.id).map((node) => node.text)).toEqual(['概括子节点'])
     space = edit(space, { type: 'summary-delete', summaryId: summary.id })
-    expect(first(space).summaries).toEqual([])
+    expect(first(space).nodes[summary.id]).toBeUndefined()
   })
 
   it('拒绝跨父节点、非连续和重复的概括', () => {
@@ -81,13 +84,16 @@ describe('连线与概括领域命令', () => {
     expect(() => edit(space, { type: 'summary-add', nodeIds: [rootId, ids[0]] })).toThrow()
   })
 
-  it('删除节点后清理失效连线和概括', () => {
+  it('删除节点后清理失效的概括节点和其子分支', () => {
     let { space, rootId, ids } = withChildren()
     space = edit(space, { type: 'link-add', fromId: rootId, toId: ids[0] })
     space = edit(space, { type: 'summary-add', nodeIds: [ids[0], ids[1]] })
+    const summary = Object.values(first(space).nodes).find((node) => node.summaryOf)!
+    space = edit(space, { type: 'add', nodeId: summary.id, kind: 'child', text: '概括子节点' })
     space = edit(space, { type: 'delete', nodeId: ids[0] })
     expect(first(space).links).toEqual([])
-    expect(first(space).summaries).toEqual([])
+    expect(first(space).nodes[summary.id]).toBeUndefined()
+    expect(Object.values(first(space).nodes).some((node) => node.text === '概括子节点')).toBe(false)
   })
 
   it('历史快照包含连线和概括，恢复后仍可读取', () => {
@@ -98,9 +104,12 @@ describe('连线与概括领域命令', () => {
     saveVersion(map, { now: 4000, id: () => 'version-links' }, 'window', true)
     const version = map.history.at(-1)!
     expect(version.content.links).toEqual(map.links)
-    expect(version.content.summaries).toEqual(map.summaries)
+    const summary = Object.values(map.nodes).find((node) => node.summaryOf)!
+    expect(version.content.nodes[summary.id].summaryOf).toEqual(summary.summaryOf)
     const restored = edit(space, { type: 'restore', versionId: version.id })
     expect(first(restored).links).toEqual(map.links)
-    expect(first(restored).summaries).toEqual(map.summaries)
+    expect(Object.values(first(restored).nodes).find((node) => node.summaryOf)?.summaryOf).toEqual(
+      summary.summaryOf,
+    )
   })
 })

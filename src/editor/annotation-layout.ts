@@ -24,6 +24,7 @@ export interface SummaryGeometry {
   top: number
   bottom: number
   bracketPath: string
+  compactBracketPath: string
   bracketX: number
   summaryLeft: number
   anchorYs: number[]
@@ -119,6 +120,13 @@ export function summaryGeometry(
       `V ${bottom - cap}`,
       `C ${bracketX} ${bottom - cap * 0.35}, ${bracketX - side * cap * 0.45} ${bottom}, ${capStartX} ${bottom}`,
       `M ${capEndX} ${centerY} H ${summaryEdge}`,
+    ].join(' '),
+    compactBracketPath: [
+      `M ${capStartX} ${top}`,
+      `H ${bracketX}`,
+      `V ${bottom}`,
+      `H ${capStartX}`,
+      `M ${bracketX} ${centerY} H ${summaryEdge}`,
     ].join(' '),
     bracketX,
     summaryLeft: summaryEdge,

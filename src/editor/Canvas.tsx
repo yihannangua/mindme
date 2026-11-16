@@ -189,7 +189,7 @@ export function Canvas({
     if (!context) return
     const widths = new Map<string, number>()
     return (text, node) => {
-      const weight = node.parentId === null ? 600 : 400,
+      const weight = node.summaryOf ? 400 : node.parentId === null ? 600 : 400,
         { family, size: fontSize } = nodeFont(node, canvasStyle),
         key = `${family}:${weight}:${fontSize}:${text}`
       let width = widths.get(key)
@@ -251,6 +251,21 @@ export function Canvas({
       ]
     })
   }, [map.summaries, map.rootId, layout, measureText, canvasStyle])
+  const summaryNodeBrackets = useMemo(() => {
+    return layout.nodes.flatMap((item) => {
+      const summaryOf = item.node.summaryOf
+      if (!summaryOf) return []
+      const anchors = summaryOf.map((id) => layout.byId.get(id))
+      if (anchors.some((anchor) => !anchor)) return []
+      const side = item.node.side === -1 ? -1 : 1
+      return [
+        {
+          node: item.node,
+          ...summaryGeometry(anchors as LayoutNode[], item.width, item.height, side),
+        },
+      ]
+    })
+  }, [layout])
   const changeCanvasStyle = (style: CanvasStyle) => {
     setCanvasStyle(style)
     setStyleMenuOpen(false)
@@ -308,13 +323,22 @@ export function Canvas({
         (size.height - 120) / (layout.height + 20),
       ),
     )
-    const boxes = [...layout.nodes, ...summaryLayouts],
+    const boxes = [
+        ...layout.nodes,
+        ...summaryLayouts,
+        ...summaryNodeBrackets.map((bracket) => ({
+          x: bracket.x,
+          y: (bracket.top + bracket.bottom) / 2,
+          width: bracket.width,
+          height: bracket.bottom - bracket.top,
+        })),
+      ],
       minX = Math.min(...boxes.map((n) => n.x - n.width / 2)),
       maxX = Math.max(...boxes.map((n) => n.x + n.width / 2)),
       minY = Math.min(...boxes.map((n) => n.y - n.height / 2)),
       maxY = Math.max(...boxes.map((n) => n.y + n.height / 2))
     setView({ x: (-(minX + maxX) / 2) * zoom, y: (-(minY + maxY) / 2) * zoom, zoom })
-  }, [size, layout, summaryLayouts])
+  }, [size, layout, summaryLayouts, summaryNodeBrackets])
   const fitRef = useRef(fit)
   fitRef.current = fit
   useLayoutEffect(() => {
@@ -840,6 +864,9 @@ export function Canvas({
   const visibleSummaries = summaryLayouts.filter((item) =>
     item.summary.nodeIds.every((id) => visibleIds.has(id)),
   )
+  const visibleSummaryNodeBrackets = summaryNodeBrackets.filter(
+    ({ node }) => visibleIds.has(node.id) && node.summaryOf?.every((id) => visibleIds.has(id)),
+  )
   const annotationPosition = annotationEditor
     ? annotationEditor.kind === 'link'
       ? (() => {
@@ -908,11 +935,18 @@ export function Canvas({
                 d={edgePath(displayById.get(item.node.parentId!)!, item, canvasStyle)}
               />
             ))}
-          {visibleSummaries.map(({ summary, bracketPath }) => (
+          {visibleSummaries.map(({ summary, bracketPath, compactBracketPath }) => (
             <path
               key={`summary-bracket-${summary.id}`}
               className="summary-bracket"
-              d={bracketPath}
+              d={canvasStyle === 'compact' ? compactBracketPath : bracketPath}
+            />
+          ))}
+          {visibleSummaryNodeBrackets.map(({ node, bracketPath, compactBracketPath }) => (
+            <path
+              key={`summary-node-bracket-${node.id}`}
+              className="summary-bracket"
+              d={canvasStyle === 'compact' ? compactBracketPath : bracketPath}
             />
           ))}
           {displayLinks.map(({ link, geometry }) => (
@@ -934,7 +968,7 @@ export function Canvas({
           ))}
           {visible.map((item) => {
             const { node, width, height, lines, textLeft, textWidth, lineHeight } = item,
-              root = node.parentId === null,
+              root = node.parentId === null && !node.summaryOf,
               editing = edit?.id === node.id,
               markerCount = Object.keys(node.markers).length,
               compactInset = 7,
@@ -951,6 +985,9 @@ export function Canvas({
                 className={`mind-node ${root ? 'root-node' : ''} ${selectedIds.has(node.id) ? 'selected' : ''} ${preview?.target === node.id ? 'drop-target' : ''} ${linkSource === node.id ? 'link-source' : ''}`}
                 data-node-id={node.id}
                 data-parent-id={node.parentId ?? ''}
+                data-summary-id={node.summaryOf ? node.id : undefined}
+                data-anchor-count={node.summaryOf?.length}
+                data-summary-side={node.summaryOf ? node.side : undefined}
                 role="button"
                 aria-label={`节点 ${node.text}`}
                 aria-pressed={selectedIds.has(node.id)}
@@ -1138,7 +1175,7 @@ export function Canvas({
           {visibleSummaries.map(({ summary, side, x, y, width, height, lines, lineHeight }) => (
             <g
               key={`summary-${summary.id}`}
-              className={`summary-node ${selectedSummaryId === summary.id ? 'selected' : ''}`}
+              className={`summary-annotation ${selectedSummaryId === summary.id ? 'selected' : ''}`}
               data-summary-id={summary.id}
               data-anchor-count={summary.nodeIds.length}
               data-summary-side={side}

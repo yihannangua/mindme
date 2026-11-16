@@ -58,4 +58,17 @@ export function pruneAnnotations(map: MapContent) {
     const summaries = map.summaries.filter((summary) => validSummaryAnchors(map, summary.nodeIds))
     if (summaries.length !== map.summaries.length) map.summaries = summaries
   }
+  // 概括节点也是独立树根；锚点失效时连同其子分支一起清理。
+  const invalidSummaries = Object.values(map.nodes).filter(
+    (node) => node.summaryOf && !validSummaryAnchors(map, node.summaryOf),
+  )
+  for (const summary of invalidSummaries) {
+    const stack = [summary.id]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (!map.nodes[id]) continue
+      for (const child of Object.values(map.nodes)) if (child.parentId === id) stack.push(child.id)
+      delete map.nodes[id]
+    }
+  }
 }

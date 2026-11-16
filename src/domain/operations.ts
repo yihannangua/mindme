@@ -22,6 +22,7 @@ const nodeFields = [
   'fontFamily',
   'fontSize',
   'backgroundColor',
+  'summaryOf',
 ] as const
 const markerCategories = Object.keys(MARKERS) as MarkerCategory[]
 export function diffSpace(before: Space, after: Space): Change[] {

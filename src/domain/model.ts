@@ -116,14 +116,38 @@ export function validateMap(map: MapContent) {
         '标记不合法',
       )
     if (id !== map.rootId) {
+      if (node.summaryOf === undefined) {
+        assert(
+          typeof node.parentId === 'string' &&
+            own(map.nodes, node.parentId) &&
+            node.parentId !== id,
+          '父节点不存在或非法自引用',
+        )
+        index.set(node.parentId, [...(index.get(node.parentId) ?? []), id])
+      }
+    }
+    if (node.summaryOf !== undefined) {
       assert(
-        typeof node.parentId === 'string' && own(map.nodes, node.parentId) && node.parentId !== id,
-        '父节点不存在或非法自引用',
+        id !== map.rootId &&
+          node.parentId === null &&
+          node.side !== 0 &&
+          Array.isArray(node.summaryOf) &&
+          node.summaryOf.length > 0 &&
+          new Set(node.summaryOf).size === node.summaryOf.length,
+        '概括节点必须是无父节点的独立分支',
       )
-      index.set(node.parentId, [...(index.get(node.parentId) ?? []), id])
+      assert(summaryAnchorIds(map, node.summaryOf), '概括只能覆盖同一父节点下连续相邻的节点')
+    } else if (id === map.rootId) {
+      assert(node.parentId === null, '中心主题必须无父节点')
     }
   }
-  const stack: [string, number][] = [[map.rootId, 0]],
+  const roots = [
+      map.rootId,
+      ...Object.values(map.nodes)
+        .filter((node) => node.parentId === null && node.summaryOf !== undefined)
+        .map((node) => node.id),
+    ],
+    stack: [string, number][] = roots.map((id) => [id, 0]),
     seen = new Set<string>()
   while (stack.length) {
     const [id, depth] = stack.pop()!

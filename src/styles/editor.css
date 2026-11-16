@@ -945,20 +945,20 @@ button.primary:hover {
   stroke-linejoin: round;
   pointer-events: none;
 }
-.summary-node {
+.summary-annotation {
   cursor: text;
 }
-.summary-node rect {
+.summary-annotation rect {
   fill: #fff;
   stroke: #718897;
   stroke-width: 1.5;
   filter: drop-shadow(0 1px 2px #33445510);
 }
-.summary-node.selected rect {
+.summary-annotation.selected rect {
   stroke: #326b98;
   stroke-width: 2.7;
 }
-.summary-node text {
+.summary-annotation text {
   fill: #405563;
   font-size: 13px;
   font-weight: 500;
@@ -995,7 +995,14 @@ button.primary:hover {
 .canvas[data-style='compact'] .node-link {
   stroke-width: 1.2;
 }
-.canvas[data-style='compact'] .summary-node text {
+.canvas[data-style='compact'] .summary-bracket {
+  stroke: var(--compact-ink);
+  stroke-width: 1.15;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  opacity: 0.9;
+}
+.canvas[data-style='compact'] .summary-annotation text {
   font-size: 11px;
 }
 .mind-node {

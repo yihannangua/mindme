@@ -94,6 +94,7 @@ export function validateOperation(op: Operation): boolean {
               'fontFamily',
               'fontSize',
               'backgroundColor',
+              'summaryOf',
             ].includes(c.field)
           : [
               '$map',
@@ -256,6 +257,7 @@ export function mergeOperation(
           'fontFamily',
           'fontSize',
           'backgroundColor',
+          'summaryOf',
           'marker:priority',
           'marker:progress',
           'marker:flag',

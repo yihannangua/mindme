@@ -55,7 +55,10 @@ describe('双设备同步协议', () => {
     const summarized = edit(linked, { type: 'summary-add', nodeIds: [nodeId] }),
       b = mergeOperation(a.state, operation(linked, summarized, 'A', 4000, 2, a.state.seq), 10000)
     expect(b.result.status).toBe('accepted')
-    expect(first(b.state.space).summaries).toEqual(first(summarized).summaries)
+    const summary = Object.values(first(summarized).nodes).find((node) => node.summaryOf)!
+    expect(
+      Object.values(first(b.state.space).nodes).find((node) => node.id === summary.id)?.summaryOf,
+    ).toEqual(summary.summaryOf)
   })
   it('旧离线修改晚上传也不能覆盖新修改', () => {
     const { state, space, nodeId } = setup()

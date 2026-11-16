@@ -36,30 +36,42 @@ test('从节点创建曲线连线，并在连线标签上修改文字和刷新�
   expect(errors).toEqual([])
 })
 
-test('概括单个节点的所有子节点，编辑概括文字并刷新恢复', async ({ page }) => {
+test('概括节点像普通节点一样编辑文字并继续创建子节点', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
   await root(page).click()
   await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
 
-  const summary = page.getByRole('button', { name: '编辑概括：概要', exact: true })
+  const summary = page.getByRole('button', { name: '节点 概要', exact: true })
   await expect(summary).toBeVisible()
   await expect(summary).toHaveAttribute('data-anchor-count', '4')
   await expect(page.locator('.summary-bracket')).toHaveCount(1)
-  await summary.click()
-  const input = page.getByLabel('编辑概括文字', { exact: true })
+  const summaryId = await summary.getAttribute('data-node-id')
+
+  await summary.dblclick()
+  const input = page.getByLabel('编辑节点文字', { exact: true })
   await expect(input).toBeFocused()
   await input.fill('运维概要')
   await input.press('Enter')
-  await expect(page.getByRole('button', { name: '编辑概括：运维概要', exact: true })).toBeVisible()
+  const edited = page.getByRole('button', { name: '节点 运维概要', exact: true })
+  await expect(edited).toBeVisible()
+
+  await edited.click()
+  await page.keyboard.press('Tab')
+  const child = page.getByRole('button', { name: '节点 新主题', exact: true })
+  await expect(child).toHaveCount(1)
+  await expect(child).toHaveAttribute('data-parent-id', summaryId!)
+  await page.getByRole('button', { name: '适应画布', exact: true }).click()
+  await expect(child).toBeVisible()
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
 
   await page.reload()
-  await expect(page.getByRole('button', { name: '编辑概括：运维概要', exact: true })).toBeVisible()
+  await expect(edited).toBeVisible()
+  await expect(child).toHaveCount(1)
   await expect(page.locator('.summary-bracket')).toHaveCount(1)
 })
 
-test('多选连续同级节点后一次生成概括', async ({ page }) => {
+test('多选连续同级节点后一次生成概括节点', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
   await firstChild(page).click()
@@ -67,7 +79,7 @@ test('多选连续同级节点后一次生成概括', async ({ page }) => {
   await expect(page.locator('.mind-node.selected')).toHaveCount(2)
   await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
 
-  const summary = page.getByRole('button', { name: '编辑概括：概要', exact: true })
+  const summary = page.getByRole('button', { name: '节点 概要', exact: true })
   await expect(summary).toBeVisible()
   await expect(summary).toHaveAttribute('data-anchor-count', '2')
   await expect(page.locator('.summary-bracket')).toHaveCount(1)
@@ -83,7 +95,7 @@ test('左侧连续节点的概括出现在左侧，括号上下留出间隙', as
   await expect(page.locator('.mind-node.selected')).toHaveCount(2)
   await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
 
-  const summary = page.getByRole('button', { name: '编辑概括：概要', exact: true })
+  const summary = page.getByRole('button', { name: '节点 概要', exact: true })
   await expect(summary).toHaveAttribute('data-summary-side', '-1')
   const summaryBox = await summary.boundingBox(),
     boxA = await leftA.boundingBox(),
@@ -98,4 +110,23 @@ test('左侧连续节点的概括出现在左侧，括号上下留出间隙', as
     bottom = Math.max(boxA!.y + boxA!.height, boxB!.y + boxB!.height)
   expect(bracketBox!.y).toBeLessThan(top)
   expect(bracketBox!.y + bracketBox!.height).toBeGreaterThan(bottom)
+})
+
+test('紧凑画布下概括使用紧凑括号样式', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+  await root(page).click()
+  await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
+  const summary = page.getByRole('button', { name: '节点 概要', exact: true })
+  await expect(summary).toBeVisible()
+  await expect(summary).not.toHaveClass(/root-node/)
+
+  await page.getByRole('button', { name: '当前画布风格：经典', exact: true }).click()
+  await page.getByRole('option', { name: '紧凑', exact: true }).click()
+  await expect(page.getByRole('button', { name: '当前画布风格：紧凑', exact: true })).toBeVisible()
+  const path = page.locator('.summary-bracket')
+  const geometry = await path.getAttribute('d')
+  expect(geometry).toContain('H')
+  expect(geometry).not.toContain('C')
+  await expect(summary).toBeVisible()
 })

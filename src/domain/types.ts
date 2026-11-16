@@ -78,6 +78,8 @@ export interface MindNode {
   fontFamily?: NodeFont | null
   fontSize?: number | null
   backgroundColor?: string | null
+  // 概括节点的锚点；存在时该节点是独立的概括根节点，不属于中心主题。
+  summaryOf?: string[]
 }
 export interface NodeLink {
   id: string

@@ -122,8 +122,9 @@ export function execute(
       break
     }
     case 'delete': {
-      assert(node!.parentId !== null, '中心主题不能直接删除，请将脑图移至回收站')
-      selectedId = selectionAfterDelete(map, node!.id, new Set([node!.id]))
+      const summary = node!.parentId === null && node!.summaryOf !== undefined
+      assert(node!.parentId !== null || summary, '中心主题不能直接删除，请将脑图移至回收站')
+      selectedId = summary ? map.rootId : selectionAfterDelete(map, node!.id, new Set([node!.id]))
       for (const id of subtree(map, node!.id)) delete map.nodes[id]
       break
     }
@@ -134,7 +135,9 @@ export function execute(
       )
       assert(!command.nodeIds.includes(map.rootId), '中心主题不能批量删除')
       const forest = selectedForest(map, command.nodeIds)
-      selectedId = selectionAfterDelete(map, forest.roots[0], forest.ids)
+      selectedId = forest.roots.some((id) => map.nodes[id].parentId === null)
+        ? map.rootId
+        : selectionAfterDelete(map, forest.roots[0], forest.ids)
       for (const id of forest.roots)
         for (const descendant of subtree(map, id)) delete map.nodes[descendant]
       break
@@ -282,19 +285,34 @@ export function execute(
     case 'summary-add': {
       const nodeIds = summaryAnchorIds(map, command.nodeIds)
       assert(nodeIds, '概括只支持同一父节点下连续相邻的节点')
-      const anchorKey = [...nodeIds].sort().join('/')
-      assert(
-        !(map.summaries ?? []).some(
-          (summary) => [...summary.nodeIds].sort().join('/') === anchorKey,
-        ),
-        '这些节点已有概括',
-      )
+      const anchorKey = [...nodeIds].sort().join('/'),
+        duplicate =
+          (map.summaries ?? []).some(
+            (summary) => [...summary.nodeIds].sort().join('/') === anchorKey,
+          ) ||
+          Object.values(map.nodes).some(
+            (node) => node.summaryOf && [...node.summaryOf].sort().join('/') === anchorKey,
+          )
+      assert(!duplicate, '这些节点已有概括')
       const text = annotationText(command.text ?? DEFAULT_SUMMARY_TEXT, DEFAULT_SUMMARY_TEXT)
       assert(text.length <= LIMITS.text, '概括文字过长')
-      map.summaries = [...(map.summaries ?? []), { id: ctx.id(), nodeIds, text }]
+      const id = ctx.id(),
+        side =
+          nodeIds.filter((nodeId) => map.nodes[nodeId].side === -1).length > nodeIds.length / 2
+            ? -1
+            : 1
+      map.nodes[id] = { ...makeNode(id, null, text, 0), side, summaryOf: [...nodeIds] }
+      selectedId = id
       break
     }
     case 'summary-text': {
+      const summaryNode = map.nodes[command.summaryId]
+      if (summaryNode?.summaryOf) {
+        const text = annotationText(command.text, DEFAULT_SUMMARY_TEXT)
+        assert(text.length <= LIMITS.text, '概括文字过长')
+        summaryNode.text = text
+        break
+      }
       const summary = (map.summaries ?? []).find((item) => item.id === command.summaryId)
       assert(summary, '概括不存在')
       const text = annotationText(command.text, DEFAULT_SUMMARY_TEXT)
@@ -302,13 +320,20 @@ export function execute(
       summary.text = text
       break
     }
-    case 'summary-delete':
+    case 'summary-delete': {
+      const summaryNode = map.nodes[command.summaryId]
+      if (summaryNode?.summaryOf) {
+        for (const id of subtree(map, summaryNode.id)) delete map.nodes[id]
+        selectedId = map.rootId
+        break
+      }
       assert(
         (map.summaries ?? []).some((summary) => summary.id === command.summaryId),
         '概括不存在',
       )
       map.summaries = (map.summaries ?? []).filter((summary) => summary.id !== command.summaryId)
       break
+    }
     case 'layout':
       if (!balanceMap(map)) return { space }
       break
