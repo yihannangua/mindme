@@ -63,6 +63,11 @@ interface Props {
   canRedo: boolean
   markerUsage: MarkerUsage[]
   onMarker: (category: MarkerCategory, value: string) => void
+  linkSource: string | null
+  onLinkTarget: (id: string) => void
+  onLinkCancel: () => void
+  onLinkStart: () => void
+  onSummarize: () => void
   onFit: (paneId: string) => void
 }
 
@@ -317,6 +322,11 @@ export function Workspace({
   canRedo,
   markerUsage,
   onMarker,
+  linkSource,
+  onLinkTarget,
+  onLinkCancel,
+  onLinkStart,
+  onSummarize,
   onFit,
 }: Props) {
   const workspaceRef = useRef(workspace),
@@ -971,6 +981,16 @@ export function Workspace({
               下钻
             </button>
             <button
+              aria-pressed={!!activeNode && linkSource === activeNode.id}
+              disabled={!activeNode}
+              onClick={onLinkStart}
+            >
+              {linkSource ? '取消连线' : '连线'}
+            </button>
+            <button disabled={!activeNode} onClick={onSummarize}>
+              概括
+            </button>
+            <button
               disabled={!map}
               onClick={() => {
                 void runPaneCommand(pane.id, map.id, { type: 'layout' }, selection)
@@ -1068,6 +1088,9 @@ export function Workspace({
               exitFullscreen={
                 fullscreen?.paneId === pane.id ? () => void toggleFullscreen(pane.id) : undefined
               }
+              linkSource={workspace.activePaneId === pane.id ? linkSource : null}
+              onLinkTarget={onLinkTarget}
+              onLinkCancel={onLinkCancel}
             />
           ) : (
             <div className="workspace-pane-empty">请选择脑图</div>

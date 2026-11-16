@@ -1,4 +1,5 @@
 import { execute, maintenance, type Command } from '../domain/commands'
+import { migrateLegacySummaries } from '../domain/annotations'
 import { initialSpace, validateSpace } from '../domain/model'
 import {
   applyChanges,
@@ -119,6 +120,13 @@ export class AppStore {
       recovered.outbox.forEach((op) => {
         if (op.state === 'sending') op.state = 'retry'
       })
+      if (!recovered.serverSpace) {
+        const migrated = migrateLegacySummaries(recovered.space)
+        if (migrated.changed) {
+          recovered.space = migrated.space
+          await this.database?.save(recovered)
+        }
+      }
       if (recovered.editorDraft) {
         const draft = recovered.editorDraft
         try {

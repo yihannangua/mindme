@@ -11,7 +11,7 @@ import {
   type Space,
 } from './types'
 
-const mapFields = ['title', 'deletedAt', 'historyDirtySince'] as const
+const mapFields = ['title', 'deletedAt', 'historyDirtySince', 'links', 'summaries'] as const
 const nodeFields = [
   'parentId',
   'order',
@@ -22,6 +22,7 @@ const nodeFields = [
   'fontFamily',
   'fontSize',
   'backgroundColor',
+  'summaryOf',
 ] as const
 const markerCategories = Object.keys(MARKERS) as MarkerCategory[]
 export function diffSpace(before: Space, after: Space): Change[] {

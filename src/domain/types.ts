@@ -78,6 +78,19 @@ export interface MindNode {
   fontFamily?: NodeFont | null
   fontSize?: number | null
   backgroundColor?: string | null
+  // 概括节点的锚点；存在时该节点是独立的概括根节点，不属于中心主题。
+  summaryOf?: string[]
+}
+export interface NodeLink {
+  id: string
+  fromId: string
+  toId: string
+  text: string
+}
+export interface NodeSummary {
+  id: string
+  nodeIds: string[]
+  text: string
 }
 export interface MapContent {
   id: string
@@ -85,6 +98,9 @@ export interface MapContent {
   rootId: string
   nodes: Record<string, MindNode>
   deletedAt: number | null
+  // 旧空间没有这两个字段；读取时按空数组处理，写入后进入 v1 字段差异。
+  links?: NodeLink[]
+  summaries?: NodeSummary[]
 }
 export interface HistorySnapshot {
   schemaVersion: 1

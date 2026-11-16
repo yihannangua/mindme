@@ -1,6 +1,8 @@
 import type { MapContent, MindNode } from '../domain/types'
+import { summaryRangeIds } from '../domain/annotations'
 import type { CanvasStyle } from '../editor/style'
 import { nodeFont } from '../editor/node-style'
+import { summaryGeometry } from '../editor/annotation-layout'
 export interface LayoutNode {
   node: MindNode
   x: number
@@ -147,6 +149,43 @@ export function layoutTree(map: MapContent, options: LayoutOptions = {}): TreeLa
       visit(node, root, top + height / 2, side, palette[first.indexOf(node) % palette.length])
       top += height
     }
+  }
+  // 概括节点是独立根节点；锚点可见后才放到外侧，其子节点继续按普通树布局。
+  const pending = new Map(
+    Object.values(map.nodes)
+      .filter((node) => node.parentId === null && node.summaryOf && node.id !== map.rootId)
+      .map((node) => [node.id, node]),
+  )
+  while (pending.size) {
+    let placedAny = false
+    for (const [id, node] of [...pending]) {
+      const anchors = node.summaryOf!.map((anchorId) => byId.get(anchorId))
+      if (anchors.some((anchor) => !anchor)) continue
+      size(id)
+      const metric = metrics.get(id)!,
+        side = node.side === -1 ? -1 : 1,
+        extent = summaryRangeIds(map, node.summaryOf!)
+          .map((anchorId) => byId.get(anchorId))
+          .filter(Boolean) as LayoutNode[],
+        geometry = summaryGeometry(
+          anchors as LayoutNode[],
+          metric.width,
+          metric.height,
+          side,
+          extent,
+        ),
+        placed = put(node, geometry.x, geometry.y, side, '#779eae'),
+        children = node.collapsed ? [] : (index.get(id) ?? [])
+      let top = placed.y - children.reduce((sum, child) => sum + heights.get(child.id)!, 0) / 2
+      for (const child of children) {
+        const height = heights.get(child.id)!
+        visit(child, placed, top + height / 2, side, '#779eae')
+        top += height
+      }
+      pending.delete(id)
+      placedAny = true
+    }
+    if (!placedAny) break
   }
   return {
     nodes,

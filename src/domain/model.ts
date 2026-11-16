@@ -1,3 +1,4 @@
+import { summaryAnchorIds } from './annotations'
 import {
   assert,
   clone,
@@ -115,14 +116,38 @@ export function validateMap(map: MapContent) {
         '标记不合法',
       )
     if (id !== map.rootId) {
+      if (node.summaryOf === undefined) {
+        assert(
+          typeof node.parentId === 'string' &&
+            own(map.nodes, node.parentId) &&
+            node.parentId !== id,
+          '父节点不存在或非法自引用',
+        )
+        index.set(node.parentId, [...(index.get(node.parentId) ?? []), id])
+      }
+    }
+    if (node.summaryOf !== undefined) {
       assert(
-        typeof node.parentId === 'string' && own(map.nodes, node.parentId) && node.parentId !== id,
-        '父节点不存在或非法自引用',
+        id !== map.rootId &&
+          node.parentId === null &&
+          node.side !== 0 &&
+          Array.isArray(node.summaryOf) &&
+          node.summaryOf.length > 0 &&
+          new Set(node.summaryOf).size === node.summaryOf.length,
+        '概括节点必须是无父节点的独立分支',
       )
-      index.set(node.parentId, [...(index.get(node.parentId) ?? []), id])
+      assert(summaryAnchorIds(map, node.summaryOf), '概括只能覆盖同一父节点下连续相邻的节点')
+    } else if (id === map.rootId) {
+      assert(node.parentId === null, '中心主题必须无父节点')
     }
   }
-  const stack: [string, number][] = [[map.rootId, 0]],
+  const roots = [
+      map.rootId,
+      ...Object.values(map.nodes)
+        .filter((node) => node.parentId === null && node.summaryOf !== undefined)
+        .map((node) => node.id),
+    ],
+    stack: [string, number][] = roots.map((id) => [id, 0]),
     seen = new Set<string>()
   while (stack.length) {
     const [id, depth] = stack.pop()!
@@ -131,6 +156,48 @@ export function validateMap(map: MapContent) {
     for (const child of index.get(id) ?? []) stack.push([child, depth + 1])
   }
   assert(seen.size === nodes.length, '存在孤立节点或循环引用')
+  if (map.links !== undefined) {
+    assert(Array.isArray(map.links) && map.links.length <= LIMITS.nodes, '连线数据不合法')
+    const ids = new Set<string>(),
+      pairs = new Set<string>()
+    for (const link of map.links) {
+      assert(
+        link &&
+          safeId(link.id) &&
+          safeId(link.fromId) &&
+          safeId(link.toId) &&
+          link.fromId !== link.toId &&
+          typeof link.text === 'string' &&
+          link.text.length <= LIMITS.text,
+        '连线数据不合法',
+      )
+      assert(own(map.nodes, link.fromId) && own(map.nodes, link.toId), '连线引用了不存在的节点')
+      const pair = [link.fromId, link.toId].sort().join('/')
+      assert(!ids.has(link.id) && !pairs.has(pair), '连线标识冲突或重复')
+      ids.add(link.id)
+      pairs.add(pair)
+    }
+  }
+  if (map.summaries !== undefined) {
+    assert(Array.isArray(map.summaries) && map.summaries.length <= LIMITS.nodes, '概括数据不合法')
+    const ids = new Set<string>()
+    for (const summary of map.summaries) {
+      assert(
+        summary &&
+          safeId(summary.id) &&
+          !ids.has(summary.id) &&
+          typeof summary.text === 'string' &&
+          summary.text.length <= LIMITS.text &&
+          Array.isArray(summary.nodeIds) &&
+          summary.nodeIds.length > 0 &&
+          summary.nodeIds.length <= nodes.length &&
+          new Set(summary.nodeIds).size === summary.nodeIds.length,
+        '概括数据不合法',
+      )
+      assert(summaryAnchorIds(map, summary.nodeIds), '概括只能覆盖同一父节点下连续相邻的节点')
+      ids.add(summary.id)
+    }
+  }
 }
 export function validateSpace(space: Space) {
   assert(
@@ -209,6 +276,8 @@ export function createMap(space: Space, title: string, ctx: Context): Space {
     title: title.trim(),
     rootId,
     nodes: { [rootId]: makeNode(rootId, null, title.trim()) },
+    links: [],
+    summaries: [],
     deletedAt: null,
     updatedAt: ctx.now,
     revision: 0,
