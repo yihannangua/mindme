@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { makeNode } from '../../src/domain/model'
+import type { Backup } from '../../src/importers/backup'
 
 const root = (page: import('@playwright/test').Page) =>
   page.getByRole('button', { name: '节点 我的第一个脑图', exact: true })
@@ -129,4 +131,54 @@ test('紧凑画布下概括使用紧凑括号样式', async ({ page }) => {
   expect(geometry).toContain('H')
   expect(geometry).not.toContain('C')
   await expect(summary).toBeVisible()
+})
+
+test('概括括号覆盖展开的下级和再下级节点', async ({ page }) => {
+  const nodes: Backup['maps'][number]['nodes'] = {
+    root: makeNode('root', null, '三层概括测试'),
+    first: { ...makeNode('first', 'root', '想要探索的事', 0), side: 1 },
+    a: { ...makeNode('a', 'first', '甲', 0), side: 1 },
+    b: { ...makeNode('b', 'a', '乙', 0), side: 1 },
+    c: { ...makeNode('c', 'a', '丙', 1), side: 1 },
+  }
+  const backup: Backup = {
+    format: 'mindme',
+    schemaVersion: 1,
+    exportedAt: 1000,
+    maps: [{ id: 'summary-range', title: '三层概括测试', rootId: 'root', nodes, deletedAt: null }],
+    tabs: [{ mapId: 'summary-range', open: true, pinned: false, order: 0 }],
+  }
+  await page.goto('/')
+  await page.getByRole('button', { name: '导入', exact: true }).click()
+  await page.getByRole('button', { name: 'JSON 备份', exact: true }).click()
+  await page.getByLabel('选择导入文件').setInputFiles({
+    name: 'summary-range.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(backup)),
+  })
+  await expect(page.getByText('已恢复 1 张脑图的新副本。', { exact: false })).toBeVisible()
+  await page.getByLabel('关闭对话框').click()
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+
+  const first = firstChild(page)
+  await first.click()
+  await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
+  const summary = page.getByRole('button', { name: '节点 概要', exact: true })
+  await expect(summary).toBeVisible()
+  const nodesInRange = await Promise.all(
+      ['甲', '乙', '丙'].map((text) =>
+        page.getByRole('button', { name: `节点 ${text}`, exact: true }).boundingBox(),
+      ),
+    ),
+    summaryBox = await summary.boundingBox(),
+    bracketBox = await page.locator('.summary-bracket').boundingBox()
+  expect(nodesInRange.every(Boolean)).toBe(true)
+  expect(summaryBox).not.toBeNull()
+  expect(bracketBox).not.toBeNull()
+  const top = Math.min(...nodesInRange.map((box) => box!.y)),
+    bottom = Math.max(...nodesInRange.map((box) => box!.y + box!.height)),
+    right = Math.max(...nodesInRange.map((box) => box!.x + box!.width))
+  expect(bracketBox!.y).toBeLessThan(top)
+  expect(bracketBox!.y + bracketBox!.height).toBeGreaterThan(bottom)
+  expect(summaryBox!.x).toBeGreaterThan(right)
 })

@@ -45,6 +45,19 @@ export function validSummaryAnchors(map: MapContent, ids: string[]): boolean {
   return summaryAnchorIds(map, ids) !== null
 }
 
+/** 概括括号覆盖锚点及其所有已展开后代节点。 */
+export function summaryRangeIds(map: MapContent, anchorIds: string[]): string[] {
+  const ids = new Set<string>(),
+    stack = [...anchorIds]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (ids.has(id) || !map.nodes[id]) continue
+    ids.add(id)
+    for (const node of Object.values(map.nodes)) if (node.parentId === id) stack.push(node.id)
+  }
+  return [...ids]
+}
+
 export function annotationText(text: string, fallback: string): string {
   const trimmed = text.trim()
   return trimmed || fallback

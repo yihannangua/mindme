@@ -1,4 +1,5 @@
 import type { MapContent, MindNode } from '../domain/types'
+import { summaryRangeIds } from '../domain/annotations'
 import type { CanvasStyle } from '../editor/style'
 import { nodeFont } from '../editor/node-style'
 import { summaryGeometry } from '../editor/annotation-layout'
@@ -163,7 +164,16 @@ export function layoutTree(map: MapContent, options: LayoutOptions = {}): TreeLa
       size(id)
       const metric = metrics.get(id)!,
         side = node.side === -1 ? -1 : 1,
-        geometry = summaryGeometry(anchors as LayoutNode[], metric.width, metric.height, side),
+        extent = summaryRangeIds(map, node.summaryOf!)
+          .map((anchorId) => byId.get(anchorId))
+          .filter(Boolean) as LayoutNode[],
+        geometry = summaryGeometry(
+          anchors as LayoutNode[],
+          metric.width,
+          metric.height,
+          side,
+          extent,
+        ),
         placed = put(node, geometry.x, geometry.y, side, '#779eae'),
         children = node.collapsed ? [] : (index.get(id) ?? [])
       let top = placed.y - children.reduce((sum, child) => sum + heights.get(child.id)!, 0) / 2

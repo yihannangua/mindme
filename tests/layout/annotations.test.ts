@@ -86,4 +86,21 @@ describe('连线与概括几何', () => {
     expect(geometry.bracketPath.split('M').length - 1).toBe(2)
     expect(geometry.bracketPath.split('H').length - 1).toBe(1)
   })
+
+  it('括号使用展开后代范围，而不是只看锚点', () => {
+    const anchors = [
+        { x: 100, y: -40, width: 100, height: 40 },
+        { x: 100, y: 40, width: 100, height: 40 },
+      ],
+      extent = [
+        ...anchors,
+        { x: 260, y: -120, width: 120, height: 40 },
+        { x: 260, y: 120, width: 80, height: 36 },
+      ],
+      geometry = summaryGeometry(anchors, 80, 30, 1, extent)
+    expect(geometry.top).toBeLessThan(-140)
+    expect(geometry.bottom).toBeGreaterThan(138)
+    expect(geometry.bracketX).toBeGreaterThan(320)
+    expect(geometry.summaryLeft).toBeGreaterThan(geometry.bracketX)
+  })
 })

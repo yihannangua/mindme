@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { saveVersion } from '../../src/domain/commands'
-import { migrateLegacySummaries } from '../../src/domain/annotations'
+import { migrateLegacySummaries, summaryRangeIds } from '../../src/domain/annotations'
 import { children } from '../../src/domain/model'
 import { applyChanges, diffSpace } from '../../src/domain/operations'
 import { clone } from '../../src/domain/types'
@@ -95,6 +95,17 @@ describe('连线与概括领域命令', () => {
     expect(first(space).links).toEqual([])
     expect(first(space).nodes[summary.id]).toBeUndefined()
     expect(Object.values(first(space).nodes).some((node) => node.text === '概括子节点')).toBe(false)
+  })
+
+  it('概括范围包含锚点的所有展开后代', () => {
+    let { space, ids } = withChildren(['甲'])
+    space = edit(space, { type: 'add', nodeId: ids[0], kind: 'child', text: '乙' })
+    const child = children(first(space), ids[0])[0]
+    space = edit(space, { type: 'add', nodeId: child.id, kind: 'child', text: '丙' })
+    const grandchild = children(first(space), child.id)[0]
+    expect(new Set(summaryRangeIds(first(space), [ids[0]]))).toEqual(
+      new Set([ids[0], child.id, grandchild.id]),
+    )
   })
 
   it('将旧版概括标注迁移为可继续建子节点的普通节点', () => {

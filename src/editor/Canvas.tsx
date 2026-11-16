@@ -10,6 +10,7 @@ import {
   type PointerEvent,
 } from 'react'
 import { selectedForest } from '../domain/branches'
+import { summaryRangeIds } from '../domain/annotations'
 import type { Command } from '../domain/commands'
 import { children } from '../domain/model'
 import {
@@ -258,14 +259,17 @@ export function Canvas({
       const anchors = summaryOf.map((id) => layout.byId.get(id))
       if (anchors.some((anchor) => !anchor)) return []
       const side = item.node.side === -1 ? -1 : 1
+      const extent = summaryRangeIds(map, summaryOf)
+        .map((id) => layout.byId.get(id))
+        .filter(Boolean) as LayoutNode[]
       return [
         {
           node: item.node,
-          ...summaryGeometry(anchors as LayoutNode[], item.width, item.height, side),
+          ...summaryGeometry(anchors as LayoutNode[], item.width, item.height, side, extent),
         },
       ]
     })
-  }, [layout])
+  }, [layout, map])
   const changeCanvasStyle = (style: CanvasStyle) => {
     setCanvasStyle(style)
     setStyleMenuOpen(false)
