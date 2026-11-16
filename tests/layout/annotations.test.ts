@@ -2,22 +2,36 @@ import { describe, expect, it } from 'vitest'
 import { linkGeometry, summaryGeometry } from '../../src/editor/annotation-layout'
 
 describe('连线与概括几何', () => {
-  it('从节点边界起止并生成带中点的三次曲线', () => {
+  it('连线端点落在节点外侧边缘，标签位于曲线中点', () => {
     const geometry = linkGeometry(
       { x: 0, y: 0, width: 100, height: 40 },
       { x: 300, y: 80, width: 120, height: 40 },
     )
     expect(geometry.d).toContain('C')
+    expect(geometry.fromSide).toBe(1)
+    expect(geometry.toSide).toBe(-1)
     expect(geometry.start.x).toBeCloseTo(54)
-    expect(geometry.start.y).toBeCloseTo(14.4)
-    expect(geometry.end.x).toBeLessThan(240)
+    expect(geometry.start.y).toBeCloseTo(0)
+    expect(geometry.end.x).toBeCloseTo(236)
+    expect(geometry.end.y).toBeCloseTo(80)
     expect(geometry.labelX).toBeGreaterThan(54)
-    expect(geometry.labelX).toBeLessThan(240)
-    expect(geometry.labelY).toBeGreaterThan(14.4)
-    expect(geometry.labelY).toBeLessThan(65.6)
+    expect(geometry.labelX).toBeLessThan(236)
+    expect(geometry.labelY).toBeGreaterThan(0)
+    expect(geometry.labelY).toBeLessThan(80)
   })
 
-  it('把概括节点放在锚点最右侧并生成括号与每行连接线', () => {
+  it('同一侧节点都从各自外侧边缘连线', () => {
+    const from = { x: 0, y: 0, width: 100, height: 40 },
+      to = { x: 300, y: 80, width: 120, height: 40 }
+    const right = linkGeometry(from, to, 1, 1)
+    expect(right.start.x).toBeCloseTo(54)
+    expect(right.end.x).toBeCloseTo(364)
+    const left = linkGeometry(from, to, -1, -1)
+    expect(left.start.x).toBeCloseTo(-54)
+    expect(left.end.x).toBeCloseTo(236)
+  })
+
+  it('概括节点放在右侧，括号上下超出锚点包围盒', () => {
     const geometry = summaryGeometry(
       [
         { x: 100, y: -60, width: 100, height: 40 },
@@ -26,18 +40,43 @@ describe('连线与概括几何', () => {
       80,
       30,
     )
+    expect(geometry.side).toBe(1)
     expect(geometry.x).toBeGreaterThan(150)
     expect(geometry.bracketX).toBeGreaterThan(150)
     expect(geometry.summaryLeft).toBeGreaterThan(geometry.bracketX)
+    expect(geometry.top).toBe(-92)
+    expect(geometry.bottom).toBe(92)
     expect(geometry.anchorYs).toEqual([-60, 60])
     expect(geometry.bracketPath).toContain('V')
     expect(geometry.bracketPath.split('M').length - 1).toBe(4)
     expect(geometry.y).toBe(0)
   })
 
-  it('单个锚点也生成可读的括号与连接线', () => {
+  it('概括节点放在左侧，括号和连接线朝左', () => {
+    const geometry = summaryGeometry(
+      [
+        { x: 100, y: -60, width: 100, height: 40 },
+        { x: 100, y: 60, width: 100, height: 40 },
+      ],
+      80,
+      30,
+      -1,
+    )
+    expect(geometry.side).toBe(-1)
+    expect(geometry.bracketX).toBeLessThan(50)
+    expect(geometry.summaryLeft).toBeLessThan(geometry.bracketX)
+    expect(geometry.x).toBeLessThan(geometry.summaryLeft)
+    expect(geometry.top).toBe(-92)
+    expect(geometry.bottom).toBe(92)
+    expect(geometry.bracketPath).toContain('V')
+  })
+
+  it('括号上下边缘超过单个锚点的高度，避免与节点重叠', () => {
     const geometry = summaryGeometry([{ x: 0, y: 20, width: 90, height: 36 }], 70, 30)
     expect(geometry.y).toBe(20)
+    expect(geometry.top).toBe(-10)
+    expect(geometry.bottom).toBe(50)
+    expect(geometry.bottom - geometry.top).toBeGreaterThan(36)
     expect(geometry.anchorYs).toEqual([20])
     expect(geometry.bracketPath).toContain('H')
   })

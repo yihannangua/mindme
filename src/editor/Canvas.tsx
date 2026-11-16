@@ -225,6 +225,11 @@ export function Canvas({
     return summaries.flatMap((summary) => {
       const anchors = summary.nodeIds.map((id) => layout.byId.get(id))
       if (anchors.some((anchor) => !anchor)) return []
+      const anchorLayouts = anchors as LayoutNode[],
+        summarySide =
+          anchorLayouts.filter((anchor) => anchor.side === -1).length > anchorLayouts.length / 2
+            ? -1
+            : 1
       const summaryNode: MindNode = {
         id: summary.id,
         parentId: map.rootId,
@@ -239,7 +244,7 @@ export function Canvas({
       return [
         {
           summary,
-          ...summaryGeometry(anchors as LayoutNode[], metric.width, metric.height),
+          ...summaryGeometry(anchorLayouts, metric.width, metric.height, summarySide),
           lines: metric.lines,
           lineHeight: metric.lineHeight,
         },
@@ -828,7 +833,9 @@ export function Canvas({
     const from = displayById.get(link.fromId),
       to = displayById.get(link.toId)
     if (!from || !to || !visibleIds.has(from.node.id) || !visibleIds.has(to.node.id)) return []
-    return [{ link, geometry: linkGeometry(from, to) }]
+    const fromSide = from.side === 0 ? (to.x >= from.x ? 1 : -1) : from.side,
+      toSide = to.side === 0 ? (from.x >= to.x ? 1 : -1) : to.side
+    return [{ link, geometry: linkGeometry(from, to, fromSide, toSide) }]
   })
   const visibleSummaries = summaryLayouts.filter((item) =>
     item.summary.nodeIds.every((id) => visibleIds.has(id)),
@@ -912,6 +919,8 @@ export function Canvas({
             <path
               key={`link-${link.id}`}
               className={`node-link ${selectedLinkId === link.id ? 'selected' : ''}`}
+              data-from-side={geometry.fromSide}
+              data-to-side={geometry.toSide}
               d={geometry.d}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
@@ -1126,12 +1135,13 @@ export function Canvas({
               </g>
             )
           })}
-          {visibleSummaries.map(({ summary, x, y, width, height, lines, lineHeight }) => (
+          {visibleSummaries.map(({ summary, side, x, y, width, height, lines, lineHeight }) => (
             <g
               key={`summary-${summary.id}`}
               className={`summary-node ${selectedSummaryId === summary.id ? 'selected' : ''}`}
               data-summary-id={summary.id}
               data-anchor-count={summary.nodeIds.length}
+              data-summary-side={side}
               role="button"
               aria-label={`编辑概括：${summary.text}`}
               transform={`translate(${x - width / 2} ${y - height / 2})`}

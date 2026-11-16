@@ -11,6 +11,8 @@ export interface LinkGeometry {
   labelY: number
   start: { x: number; y: number }
   end: { x: number; y: number }
+  fromSide: AnnotationSide
+  toSide: AnnotationSide
 }
 
 export interface SummaryGeometry {
@@ -18,23 +20,24 @@ export interface SummaryGeometry {
   y: number
   width: number
   height: number
+  side: -1 | 1
+  top: number
+  bottom: number
   bracketPath: string
   bracketX: number
   summaryLeft: number
   anchorYs: number[]
 }
 
-const borderPoint = (box: AnnotationBox, toward: AnnotationBox) => {
-  const dx = toward.x - box.x,
-    dy = toward.y - box.y
-  if (!dx && !dy) return { x: box.x, y: box.y }
-  const halfWidth = box.width / 2 + 4,
-    halfHeight = box.height / 2 + 4,
-    tx = dx === 0 ? Infinity : halfWidth / Math.abs(dx),
-    ty = dy === 0 ? Infinity : halfHeight / Math.abs(dy),
-    t = Math.min(tx, ty)
-  return { x: box.x + dx * t, y: box.y + dy * t }
-}
+export type AnnotationSide = -1 | 1
+
+const outsideSide = (box: AnnotationBox, toward: AnnotationBox): AnnotationSide =>
+  toward.x >= box.x ? 1 : -1
+
+const horizontalEndpoint = (box: AnnotationBox, side: AnnotationSide) => ({
+  x: box.x + side * (box.width / 2 + 4),
+  y: box.y,
+})
 
 const cubicPoint = (
   p0: { x: number; y: number },
@@ -50,18 +53,21 @@ const cubicPoint = (
   }
 }
 
-/** 任意两个节点的曲线在节点边界处起止，标签落在曲线中点。 */
-export function linkGeometry(from: AnnotationBox, to: AnnotationBox): LinkGeometry {
-  const start = borderPoint(from, to),
-    end = borderPoint(to, from),
+/** 任意两个节点的曲线都从左/右侧外缘起止，标签落在曲线中点。 */
+export function linkGeometry(
+  from: AnnotationBox,
+  to: AnnotationBox,
+  fromSide: AnnotationSide = outsideSide(from, to),
+  toSide: AnnotationSide = outsideSide(to, from),
+): LinkGeometry {
+  const start = horizontalEndpoint(from, fromSide),
+    end = horizontalEndpoint(to, toSide),
     dx = end.x - start.x,
     dy = end.y - start.y,
     length = Math.hypot(dx, dy),
-    nx = length ? -dy / length : 0,
-    ny = length ? dx / length : 0,
-    bend = Math.min(120, Math.max(30, length * 0.18)),
-    c1 = { x: start.x + dx * 0.35 + nx * bend, y: start.y + dy * 0.35 + ny * bend },
-    c2 = { x: end.x - dx * 0.35 + nx * bend, y: end.y - dy * 0.35 + ny * bend },
+    bend = Math.min(140, Math.max(44, length * 0.24)),
+    c1 = { x: start.x + fromSide * bend, y: start.y },
+    c2 = { x: end.x + toSide * bend, y: end.y },
     label = cubicPoint(start, c1, c2, end, 0.5)
   return {
     d: `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
@@ -69,40 +75,49 @@ export function linkGeometry(from: AnnotationBox, to: AnnotationBox): LinkGeomet
     labelY: label.y,
     start,
     end,
+    fromSide,
+    toSide,
   }
 }
 
 /**
- * 概括节点固定放在锚点最右侧，括号在锚点右缘之外，
- * 每个锚点有一小段横线，中心横线连到概括节点。
+ * 概括节点放在锚点外侧（左侧锚点向左，右侧锚点向右），
+ * 括号上下边缘越过所有锚点的包围盒，避免与节点重叠。
  */
 export function summaryGeometry(
   anchors: AnnotationBox[],
   width: number,
   height: number,
+  side: AnnotationSide = 1,
 ): SummaryGeometry {
-  const right = Math.max(...anchors.map((anchor) => anchor.x + anchor.width / 2)),
-    top = Math.min(...anchors.map((anchor) => anchor.y)),
-    bottom = Math.max(...anchors.map((anchor) => anchor.y)),
+  const padding = 12,
+    left = Math.min(...anchors.map((anchor) => anchor.x - anchor.width / 2)),
+    right = Math.max(...anchors.map((anchor) => anchor.x + anchor.width / 2)),
+    top = Math.min(...anchors.map((anchor) => anchor.y - anchor.height / 2)) - padding,
+    bottom = Math.max(...anchors.map((anchor) => anchor.y + anchor.height / 2)) + padding,
     centerY = (top + bottom) / 2,
-    bracketX = right + 34,
-    summaryLeft = bracketX + 42,
-    x = summaryLeft + width / 2
-  const stubs = anchors.map(
-    (anchor) => `M ${anchor.x + anchor.width / 2} ${anchor.y} H ${bracketX}`,
-  )
+    bracketX = side === 1 ? right + 34 : left - 34,
+    summaryEdge = side === 1 ? bracketX + 42 : bracketX - 42,
+    x = side === 1 ? summaryEdge + width / 2 : summaryEdge - width / 2,
+    stubs = anchors.map((anchor) => {
+      const anchorX = anchor.x + (side * anchor.width) / 2
+      return `M ${anchorX} ${anchor.y} H ${bracketX}`
+    })
   return {
     x,
     y: centerY,
     width,
     height,
+    side,
+    top,
+    bottom,
     bracketPath: [
       ...stubs,
       `M ${bracketX} ${top} V ${bottom}`,
-      `M ${bracketX} ${centerY} H ${summaryLeft}`,
+      `M ${bracketX} ${centerY} H ${summaryEdge}`,
     ].join(' '),
     bracketX,
-    summaryLeft,
+    summaryLeft: summaryEdge,
     anchorYs: anchors.map((anchor) => anchor.y),
   }
 }

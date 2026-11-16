@@ -21,6 +21,8 @@ test('从节点创建曲线连线，并在连线标签上修改文字和刷新�
   const label = page.getByRole('button', { name: '编辑连线：关系', exact: true })
   await expect(label).toBeVisible()
   await expect(page.locator('.node-link')).toHaveCount(1)
+  await expect(page.locator('.node-link')).toHaveAttribute('data-from-side', '1')
+  await expect(page.locator('.node-link')).toHaveAttribute('data-to-side', '1')
   await label.click()
   const input = page.getByLabel('编辑连线文字', { exact: true })
   await expect(input).toBeFocused()
@@ -69,4 +71,31 @@ test('多选连续同级节点后一次生成概括', async ({ page }) => {
   await expect(summary).toBeVisible()
   await expect(summary).toHaveAttribute('data-anchor-count', '2')
   await expect(page.locator('.summary-bracket')).toHaveCount(1)
+})
+
+test('左侧连续节点的概括出现在左侧，括号上下留出间隙', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('本地已保存', { exact: true })).toBeVisible()
+  const leftA = page.getByRole('button', { name: '节点 灵感与收集', exact: true }),
+    leftB = page.getByRole('button', { name: '节点 值得记住的事', exact: true })
+  await leftA.click()
+  await leftB.click({ modifiers: ['Shift'] })
+  await expect(page.locator('.mind-node.selected')).toHaveCount(2)
+  await page.locator('.toolbar').getByRole('button', { name: '概括', exact: true }).click()
+
+  const summary = page.getByRole('button', { name: '编辑概括：概要', exact: true })
+  await expect(summary).toHaveAttribute('data-summary-side', '-1')
+  const summaryBox = await summary.boundingBox(),
+    boxA = await leftA.boundingBox(),
+    boxB = await leftB.boundingBox(),
+    bracketBox = await page.locator('.summary-bracket').boundingBox()
+  expect(summaryBox).not.toBeNull()
+  expect(boxA).not.toBeNull()
+  expect(boxB).not.toBeNull()
+  expect(bracketBox).not.toBeNull()
+  expect(summaryBox!.x + summaryBox!.width).toBeLessThan(Math.min(boxA!.x, boxB!.x))
+  const top = Math.min(boxA!.y, boxB!.y),
+    bottom = Math.max(boxA!.y + boxA!.height, boxB!.y + boxB!.height)
+  expect(bracketBox!.y).toBeLessThan(top)
+  expect(bracketBox!.y + bracketBox!.height).toBeGreaterThan(bottom)
 })
