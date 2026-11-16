@@ -11,6 +11,8 @@ export interface LinkGeometry {
   labelY: number
   start: { x: number; y: number }
   end: { x: number; y: number }
+  control1: { x: number; y: number }
+  control2: { x: number; y: number }
   fromSide: AnnotationSide
   toSide: AnnotationSide
 }
@@ -66,9 +68,16 @@ export function linkGeometry(
     dx = end.x - start.x,
     dy = end.y - start.y,
     length = Math.hypot(dx, dy),
-    bend = Math.min(140, Math.max(44, length * 0.24)),
-    c1 = { x: start.x + fromSide * bend, y: start.y },
-    c2 = { x: end.x + toSide * bend, y: end.y },
+    bend = Math.min(300, Math.max(110, length * 0.5)),
+    bow = Math.min(60, Math.max(20, bend * 0.22)),
+    c1 = {
+      x: start.x + fromSide * bend,
+      y: start.y + dy * 0.15 - bow,
+    },
+    c2 = {
+      x: end.x + toSide * bend,
+      y: end.y - dy * 0.15 + bow,
+    },
     label = cubicPoint(start, c1, c2, end, 0.5)
   return {
     d: `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
@@ -76,6 +85,8 @@ export function linkGeometry(
     labelY: label.y,
     start,
     end,
+    control1: c1,
+    control2: c2,
     fromSide,
     toSide,
   }

@@ -20,6 +20,17 @@ describe('连线与概括几何', () => {
     expect(geometry.labelY).toBeLessThan(80)
   })
 
+  it('连线使用更宽的外侧控制点和舒展弧度', () => {
+    const geometry = linkGeometry(
+      { x: 0, y: 0, width: 100, height: 40 },
+      { x: 300, y: 80, width: 120, height: 40 },
+    )
+    expect(Math.abs(geometry.control1.x - geometry.start.x)).toBeGreaterThan(90)
+    expect(Math.abs(geometry.control2.x - geometry.end.x)).toBeGreaterThan(90)
+    expect(geometry.control1.y).toBeLessThan(geometry.start.y)
+    expect(geometry.control2.y).toBeGreaterThan(geometry.end.y)
+  })
+
   it('同一侧节点都从各自外侧边缘连线', () => {
     const from = { x: 0, y: 0, width: 100, height: 40 },
       to = { x: 300, y: 80, width: 120, height: 40 }
