@@ -1,4 +1,11 @@
-import { LIMITS, type MapContent, type NodeLink, type NodeSummary } from './types'
+import {
+  LIMITS,
+  clone,
+  type MapContent,
+  type NodeLink,
+  type NodeSummary,
+  type Space,
+} from './types'
 
 export const DEFAULT_LINK_TEXT = '关系'
 export const DEFAULT_SUMMARY_TEXT = '概要'
@@ -41,6 +48,45 @@ export function validSummaryAnchors(map: MapContent, ids: string[]): boolean {
 export function annotationText(text: string, fallback: string): string {
   const trimmed = text.trim()
   return trimmed || fallback
+}
+
+/** 将旧版地图级概括标注迁移为可继续建子节点的普通概括节点。 */
+export function migrateLegacySummaries(space: Space): { space: Space; changed: boolean } {
+  const next = clone(space)
+  let changed = false
+  for (const map of Object.values(next.maps)) {
+    const summaries = map.summaries ?? []
+    if (!summaries.length) continue
+    const remaining: NodeSummary[] = []
+    for (const summary of summaries) {
+      if (map.nodes[summary.id]) continue
+      const nodeIds = summaryAnchorIds(map, summary.nodeIds)
+      if (!nodeIds) {
+        remaining.push(summary)
+        continue
+      }
+      const side =
+        nodeIds.filter((id) => map.nodes[id].side === -1).length > nodeIds.length / 2 ? -1 : 1
+      map.nodes[summary.id] = {
+        id: summary.id,
+        parentId: null,
+        order: 0,
+        text: summary.text,
+        collapsed: false,
+        markers: {},
+        position: null,
+        side,
+        summaryOf: [...nodeIds],
+      }
+      changed = true
+    }
+    if (remaining.length) map.summaries = remaining
+    else {
+      delete map.summaries
+      changed = true
+    }
+  }
+  return { space: next, changed }
 }
 
 /**

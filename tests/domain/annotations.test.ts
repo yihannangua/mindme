@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { saveVersion } from '../../src/domain/commands'
+import { migrateLegacySummaries } from '../../src/domain/annotations'
 import { children } from '../../src/domain/model'
 import { applyChanges, diffSpace } from '../../src/domain/operations'
 import { clone } from '../../src/domain/types'
@@ -94,6 +95,28 @@ describe('连线与概括领域命令', () => {
     expect(first(space).links).toEqual([])
     expect(first(space).nodes[summary.id]).toBeUndefined()
     expect(Object.values(first(space).nodes).some((node) => node.text === '概括子节点')).toBe(false)
+  })
+
+  it('将旧版概括标注迁移为可继续建子节点的普通节点', () => {
+    let { space, ids } = withChildren()
+    space = edit(space, { type: 'summary-add', nodeIds: [ids[0], ids[1]] })
+    const summary = Object.values(first(space).nodes).find((node) => node.summaryOf)!
+    const map = first(space)
+    delete map.nodes[summary.id]
+    map.summaries = [{ id: summary.id, nodeIds: summary.summaryOf!, text: summary.text }]
+
+    const migrated = migrateLegacySummaries(space)
+    expect(migrated.changed).toBe(true)
+    const next = first(migrated.space)
+    expect(next.summaries).toBeUndefined()
+    expect(next.nodes[summary.id].summaryOf).toEqual(summary.summaryOf)
+    const withChild = edit(migrated.space, {
+      type: 'add',
+      nodeId: summary.id,
+      kind: 'child',
+      text: '迁移后子节点',
+    })
+    expect(children(first(withChild), summary.id)).toHaveLength(1)
   })
 
   it('历史快照包含连线和概括，恢复后仍可读取', () => {
